@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Debugging by Elimination</title>
+<style>
+  :root{
+    --bg:#101418; --panel:#171d23; --panel2:#1c242c; --line:#2a333c;
+    --ink:#dce4ea; --muted:#8b98a5; --faint:#5c6a76;
+    --space:#7f77dd; --dead:#2b333b; --crash:#e06a3e; --skew:#d4a13f; --fixed:#2f8a68;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:"Hiragino Sans","Noto Sans JP",-apple-system,sans-serif;
+    font-size:15px; line-height:1.75;
+    display:flex; justify-content:center; padding:32px 16px 64px;
+  }
+  .wrap{max-width:880px; width:100%}
+  h1{font-size:20px; font-weight:600; margin-bottom:4px}
+  .sub{color:var(--muted); font-size:13px; margin-bottom:14px}
+
+  .tabs{display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap}
+  .tab{font-size:13px; padding:6px 16px; border-radius:999px; border:1px solid var(--line);
+    color:var(--faint); background:none; cursor:pointer; font-family:inherit; transition:all .25s}
+  .tab:hover{border-color:var(--muted)}
+  .tab.on{color:var(--ink); border-color:var(--space); background:rgba(127,119,221,.12)}
+
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px}
+  canvas{display:block; width:100%; height:auto; border-radius:8px; background:var(--panel2);
+    touch-action:none; cursor:grab}
+  canvas:active{cursor:grabbing}
+
+  .statusrow{display:flex; align-items:center; gap:14px; padding:10px 4px 0; flex-wrap:wrap}
+  .counter{font-size:13px; color:var(--muted)}
+  .counter b{color:var(--ink); font-size:16px; font-weight:600}
+  .bar{flex:1; min-width:120px; height:6px; background:var(--dead); border-radius:3px; overflow:hidden}
+  .bar i{display:block; height:100%; background:var(--space); border-radius:3px; transition:width .6s}
+
+  .frametitle{font-size:14px; padding:12px 4px 0; color:var(--ink)}
+  .frametitle b{font-weight:600}
+  .tracks{display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px}
+  @media(max-width:640px){.tracks{grid-template-columns:1fr}}
+  .track{background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:12px 14px; min-height:150px}
+  .track h4{font-size:12px; font-weight:600; color:var(--faint); letter-spacing:.06em; margin-bottom:6px}
+  .track div{font-size:13.5px; color:var(--muted)}
+  .track b{color:var(--ink); font-weight:600}
+  .track .opt{margin-top:8px; padding-top:8px; border-top:1px dashed var(--line)}
+  .track .opt em{font-style:normal; color:var(--skew)}
+
+  .ctrl{display:flex; align-items:center; gap:10px; padding:14px 2px 0; flex-wrap:wrap}
+  button.nav{background:none; border:1px solid var(--line); color:var(--ink);
+    border-radius:8px; padding:7px 16px; font-size:13px; cursor:pointer; font-family:inherit}
+  button.nav:hover:not(:disabled){border-color:var(--muted)}
+  button.nav:disabled{opacity:.35; cursor:default}
+  .dots{font-size:10px; color:var(--faint); letter-spacing:3px}
+  .hint{margin-left:auto; font-size:12px; color:var(--faint)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 id="h1">Debugging by Elimination</h1>
+  <p class="sub" id="sub">Whatever remains, however improbable — each dot is a suspect, and every observation extinguishes the innocent.</p>
+
+  <div class="tabs">
+    <button class="tab" id="t0">Intro: only logins fail</button>
+    <button class="tab" id="t1">Case: only writes fail</button>
+    <button class="tab" id="t2">Hard case: intermittent stalls</button>
+    <button class="tab" id="t3">Another kind: you fix it, it comes back</button>
+    <button class="tab" id="langbtn" style="margin-left:auto">EN</button>
+  </div>
+
+  <div class="panel">
+    <canvas id="cv" width="840" height="520"></canvas>
+    <div class="statusrow">
+      <span class="counter"><span id="cntpre">残り候補</span> <b id="cnt">120</b> / 120</span>
+      <div class="bar"><i id="barfill" style="width:100%"></i></div>
+      <span class="hint" id="hint">ドラッグで自由回転 / フレーム送りで切断面へ自動移動</span>
+    </div>
+    <div class="frametitle" id="ftitle"></div>
+    <div class="tracks">
+      <div class="track"><h4 id="h4act">調査 — この段階でやったこと</h4><div id="act"></div></div>
+      <div class="track"><h4 id="h4state">状態 — 削れた候補と選択肢</h4><div id="state"></div></div>
+    </div>
+    <div class="ctrl">
+      <button class="nav" id="prev">戻る</button>
+      <button class="nav" id="next">次へ</button>
+      <span class="dots" id="fdots"></span>
+    </div>
+  </div>
+
+<script>
+// ============ i18n ============
+var lang='ja';
+var TR={
+ '場所':'Location','共有':'Shared','共有基盤':'Shared infra','アプリ':'App','ランタイム':'Runtime',
+ 'ネットワーク':'Network','構成':'Config','装置':'Device','書き込み経路への関与':'Role in the write path',
+ '共通経路':'Common path','書き込み側':'Write side','構成要素':'Component','ライブラリ':'Library','カーネル':'Kernel',
+ '時刻同期':'Time sync','エージェント':'Agent','直近デプロイへの近さ':'Near recent deploy?','低':'Far','高':'Near',
+ 'エージェントの版':'Agent version','経路上の位置':'Position on path','入口':'Edge','アプリ層':'App tier',
+ 'データ層':'Data tier','接続プール':'Conn pool','キュー':'Queue','認証':'Auth','キャッシュ':'Cache',
+ 'バックアップ':'Backup','リトライ設定':'Retry config','タイムアウト設定':'Timeout config',
+ '14:00のイベントへの近さ':'Near the 14:00 event?','遠い':'Far','近い':'Near',
+ '転送リトライ':'Proxy retry','アプリ(飽和)':'App (saturated)','プール・キュー':'Pool & queue','タイムアウト':'Timeout',
+ '維持ループ':'Sustaining loop','切断済み':'Cut','Node 7のディスク水位超過':'Disk watermark breached (Node 7)',
+ '定型確認の範囲':'Routine checks','範囲内':'Covered','範囲外':'Not covered','Host 4の時刻ズレ':'Clock skew (Host 4)','エージェント v2.3':'Agent v2.3'
+};
+function tr(x){ return (lang==='en' && TR[x]) ? TR[x] : x; }
+var UI={
+ ja:{h1:'引き算のトラブルシューティング', sub:'点は容疑者(原因の候補)。不可能を消していけば、残ったものが真実になる',
+   t0:'入門:ログインだけが失敗する', t1:'事例:書き込みだけが失敗する', t2:'難しい事例:間欠的に応答が詰まる', t3:'別の類型:直しても、戻ってくる',
+   cnt:'残り候補', hint:'ドラッグで自由回転 / フレーム送りで切断面へ自動移動',
+   h4a:'調査 — この段階でやったこと', h4s:'状態 — 削れた候補と選択肢', prev:'戻る', next:'次へ', btn:'EN'},
+ en:{h1:'Debugging by Elimination', sub:'Whatever remains, however improbable — each dot is a suspect, and every observation extinguishes the innocent.',
+   t0:'Intro: only logins fail', t1:'Case: only writes fail', t2:'Hard case: intermittent stalls', t3:'Another kind: you fix it, it comes back',
+   cnt:'Suspects left', hint:'Drag to rotate freely / stepping frames auto-moves to the informative angle',
+   h4a:'Investigation — what was done', h4s:'State — what got eliminated, and the options', prev:'Back', next:'Next', btn:'日本語'}
+};
+var ENT=[
+ [
+  {t:"<b>0. Verify the report</b> — you can't even count yet",
+   act:"Verify 'only logins fail': only the APIs that involve authentication are failing, and <b>every other API is fine</b>. The type of the cause (config? code? hardware?) is undecided — <b>the candidates cannot be enumerated</b>.",
+   state:"Candidates: <b>an undecided cloud</b>.<div class='opt'><em>Goals</em>: short-term = stop the login failures / long-term = name the cause.</div>"},
+  {t:"<b>1. Decide what counts as a suspect</b> — the cloud resolves into countable dots",
+   act:"Declare: 'the cause is <b>one of the parts, on one of the hosts</b>.' With that one sentence, the cloud resolves into <b>120 suspects</b>.",
+   state:"The suspects can now be <b>written down as a list</b>.<div class='opt'><em>The test</em>: can you write the suspect list? If not, you're still inside the cloud.</div>"},
+  {t:"<b>2. Cut along the location axis</b> — 112 gone in one stroke",
+   act:"Cross-check the failed logins in the logs — <b>all pass through Host 4</b>. Logins via other hosts succeed. If the auth service itself were broken, every host would fail.",
+   state:"<b>112 candidates go dark at once; 8 remain</b> (Host 4's eight parts).<div class='opt'><em>Options</em>: pulling Host 4 out of rotation meets the short-term goal right now (reversible).</div>"},
+  {t:"<b>3. Check what should just work</b> — the routine catches it",
+   act:"Run the routine healthy-side checks on Host 4: name resolution answers (dig), dependencies are reachable (curl), disk and resource limits are fine — so the network, filesystem, device and OS are innocent. And exactly one item fails: <b>the clock is five minutes ahead, and the time-sync service has stopped</b> — one of the things that should just be working, wasn't.",
+   state:"<b>4 candidates go dark; 4 remain</b> (app, runtime, config, time sync). A stopped sync service is <b>a finding, not yet a verdict</b>."},
+  {t:"<b>4. A hunch, then verification</b> — hypotheses set the order; verification eliminates",
+   act:"The hunch: a fast clock issues tokens 'from the future', and auth rejects them. It is still a hypothesis — a reason to <b>check this first</b>, not a reason to delete anything. Verify: resync the clock and restart the sync service (reversible) → <b>the login failures vanish</b>.",
+   state:"The fix doubled as the test, and it <b>refuted the remaining candidates</b> (app, runtime, config) — had one of them been the cause, fixing the clock would have changed nothing. <b>Converged: cause = the stopped time sync on Host 4.</b>"},
+  {t:"<b>5. Fix and re-observe</b>",
+   act:"The short-term fix is already done (the verification was the fix, and it was reversible). Why had it stopped? Host 4 was <b>the first node built with the new IaC tooling</b>, and the time-sync setup that used to be done by hand had never made it into the code. Long-term: add the sync setup to the code, and monitor time sync (running, and how far off).",
+   state:"Both goals met.<div class='opt'><em>Prior update</em>: 'When auth-related things fail, check the clock early.' Priors order the search — suspects are only ever eliminated by observation and verification.</div>"}
+ ],
+ [
+  {t:"<b>0. Verify the report</b> — light the suspects",
+   act:"Verify: 'writes have started failing; <b>reads are fine</b>.' The system is a 12-node datastore — <b>reads can be served from replicas, but a write goes through the node that owns the key</b>. Candidates = shared infra + 12 nodes × 8 parts = <b>120 dots</b>.",
+   state:"Candidates: everything.<div class='opt'><em>Goals</em>: short-term = stop the write failures / long-term = name the cause.</div>"},
+  {t:"<b>1. Confirm the healthy side</b> — extinguish the shared parts",
+   act:"Check what should just work: name resolution (dig), reachability to the coordinator (curl), clock sync — <b>all fine</b>. If a shared component were the cause, writes would fail equally on every node — but the failures are skewed.",
+   state:"<b>24 shared candidates go dark</b>.<div class='opt'><em>Options</em>: zero side effects so far.</div>"},
+  {t:"<b>2. Localize</b> — cut by key ownership",
+   act:"Cross-check the keys of the failed writes — <b>all owned by Node 7</b>. Writes to keys owned by other nodes succeed (spatial comparison).",
+   state:"<b>88 candidates go dark, 8 remain</b>.<div class='opt'><em>Options</em>: moving Node 7's ownership elsewhere would stop the failures (reversible, but the move takes time). <b>A path to the short-term goal is secured</b>. Cause still unnamed.</div>"},
+  {t:"<b>3. Cut by layer</b> — what only writes touch",
+   act:"Even on Node 7, <b>reads are fine</b> — replica serving and reads of existing data both work. The process is alive and answering. If a shared layer (app through config) were broken, reads would break too — refutation extinguishes six layers. The one thing only a write must touch: <b>the node's own disk</b>.",
+   state:"<b>2 candidates left</b>: the filesystem and the disk device.<div class='opt'><em>Options</em>: both can be checked just by looking.</div>"},
+  {t:"<b>4. Direct observation</b> — the invisible waterline",
+   act:"Read the disk metrics (no side effects): <b>Node 7 alone has crossed the configured watermark</b>. Past the watermark, the datastore <b>switches itself to rejecting writes</b> to protect the data. The device's SMART is clean. Rereading the error logs: 'read-only' had been there all along — a line you cannot read without knowing the mechanism.",
+   state:"<b>The immediate cause = Node 7 crossed the disk watermark</b>. Writes only, Node 7's keys only, reads fine — it fits. But the completeness check leaves one more question: <b>why did only Node 7 cross first?</b>"},
+  {t:"<b>5. Why only Node 7?</b> — where the symptom is vs. where the problem lives",
+   act:"The provisioning records show Node 7 alone had been rebuilt, during a past replacement, with <b>the wrong (smaller) disk size</b>. The data is growing on every node, by design — and <b>the other 11 are already at 80% of the waterline</b>.",
+   state:"Short-term: rebalance Node 7's data and delete what is disposable (reversible) → failures vanish (refutation passed). Long-term: rebuild at the correct size; monitor the watermark (know before you cross it).<div class='opt'><em>Prior updates</em>: 'When only writes fail, suspect a system protecting itself.' '<b>Where the symptom shows up and where the problem lives are two different things.</b>'</div>"}
+ ],
+ [
+  {t:"<b>0. Verify the report, and decide what 'fixed' means</b>",
+   act:"Verify 'responses occasionally stall for seconds; a few times a day, slowly increasing' — confirmed in the logs; this is real. It worsens slowly, so <b>decide upfront what counts as fixed (an observation window with zero recurrence)</b>.",
+   state:"Candidates: all 120.<div class='opt'><em>Preserve early</em>: this may be the kind that a restart erases. Reserve one instance to keep for inspection.</div>"},
+  {t:"<b>1. 'It must be the deploy'</b>",
+   act:"The symptom started <b>the same week as the latest deploy</b>. Everyone suspects it first — keep the hunch, but it isn't proof. The deploy is <b>reversible</b>, so roll back to test → <b>the stalls remain</b>.",
+   state:"The <b>40 candidates a deploy touches</b> (app, runtime, config) go dark on the strength of one fact: <b>reverting didn't fix it</b>.<div class='opt'><em>Lesson</em>: a reversible operation is the strongest tool for clearing suspects. …The real story behind 'same week' comes later.</div>"},
+  {t:"<b>2. Count by service and host</b> — a miss",
+   act:"Tally occurrences by service and by host — <b>no skew visible</b>. A few events per day isn't enough data yet.",
+   state:"<b>Zero extinguished</b>. Some cuts just don't bite yet. Keep collecting; look for a different kind of clue."},
+  {t:"<b>3. Check what should just work</b>",
+   act:"Are the clocks in sync? Does name resolution answer (dig)? Are dependencies reachable (curl)? Are disk space, file-descriptor and connection limits well below their ceilings? — <b>all fine</b>. Not a resource-exhaustion stall.",
+   state:"Kernel and filesystem resource candidates, <b>24, go dark</b>.<div class='opt'><em>Options</em>: everything so far is look-only. Nothing touched.</div>"},
+  {t:"<b>4. The chart trap</b> — averages dilute the few",
+   act:"The memory chart looked flat. But it was <b>one line averaging all 12 hosts</b>. A few growing hosts get diluted by the rest. Redraw it per host — <b>a few instances are climbing like a staircase</b>.",
+   state:"<b>Zero extinguished, but the view changed</b>. Aggregated charts hide minority anomalies — same data, different drawing, different visibility."},
+  {t:"<b>5. The correlation is broken</b> — traffic is not rising",
+   act:"On the growing instances, <b>memory climbs while request counts stay flat</b>. If load caused it, they would move together — this decoupling is the signature of something that <b>grows from the inside</b> (a leak). The stalls coincide with GC and swapping.",
+   state:"The behavior is self-contained within each instance — shared services (LB/DNS/auth) and time sync, <b>32 candidates, go dark</b>."},
+  {t:"<b>6. Compare growers with non-growers</b>",
+   act:"Same service, same config. The only difference: <b>days since restart</b> — the longer an instance runs, the bigger it grows. Restart one: it resets, then starts growing again.",
+   state:"<b>Zero extinguished, but a new way to compare emerged: uptime</b>. It wasn't an axis we started with — observation can create new dimensions."},
+  {t:"<b>7. Go inside the host</b>",
+   act:"Look at memory per process with top (<b>look-only</b>) — the bloated process isn't the app itself but the <b>monitoring agent</b> that lives on every host.",
+   state:"The app-side (library) <b>12 candidates go dark; 12 remain</b> = each host's agent."},
+  {t:"<b>8. Sort by version</b> — the change nobody recorded",
+   act:"List the agent versions: only the <b>5 hosts on v2.3</b> grow. v2.3 arrived last week via the agent's own <b>auto-update</b> — a change that never appears in the deploy history. The 'same week' in step 1 was <b>another change running quietly in the same week</b>.",
+   state:"<b>7 candidates go dark, 5 remain</b>. 'What changed recently?' can only search recorded changes — auto-updates, certificate renewals and OS patches live outside it."},
+  {t:"<b>9. Verify and converge</b> — five dots, one cause",
+   act:"Run v2.3 for a few days in an isolated environment → <b>the leak reproduces</b>. Pin v2.2 → it doesn't (<b>the refutation passes too</b>).",
+   state:"<b>Converged: cause = a memory leak in agent v2.3</b>. Five if you count instances, one if you count versions — <b>how you count is also a choice</b>.<div class='opt'><em>Preservation</em>: one instance kept quarantined, heap dump taken before any restart.</div>"},
+  {t:"<b>10. Fix and re-observe</b>",
+   act:"Short-term: planned restarts of the long-running instances + <b>pause the auto-update</b> (both reversible). Long-term: report upstream, confirm the fixed release.",
+   state:"<b>Two weeks, zero recurrence</b> — done.<div class='opt'><em>Lessons for next time</em>: 'Count automatic changes among recent changes.' 'Never trust only the aggregated chart.'</div>"}
+ ],
+ [
+  {t:"<b>0. Verify the report</b> — this time it's 'suddenly, everything'",
+   act:"Since 14:02, <b>almost every request is slow</b>. Unlike the other two cases: not sporadic but total, and sudden. Light all 120.",
+   state:"Candidates: everything.<div class='opt'><em>Note</em>: problems that start suddenly usually end quickly — a rule of thumb this incident is about to break.</div>"},
+  {t:"<b>1. Look for what is abnormal</b> — everything is",
+   act:"Normally you narrow from where the metrics look bad. Today <b>the LB queue, app latency and DB load are all red</b>.",
+   state:"<b>Zero extinguished — you can't narrow</b>. When a system saturates, abnormality appears as a <b>consequence</b>, not only a cause. The question 'where is it broken?' stops working."},
+  {t:"<b>2. Extinguish what you still can</b>",
+   act:"Check what should just work: name resolution answers instantly (dig), token issuance is fast (curl). <b>Outside the path, all is well</b>.",
+   state:"DNS and auth, <b>12 candidates, go dark</b>. Even amid total saturation, healthy-side checks keep working."},
+  {t:"<b>3. Find the beginning</b> — the culprit is in the past",
+   act:"Rewind the timeline: at <b>14:00 the DB's automated backup</b> ran and I/O was heavy for a few minutes. 'That's it!' — but the backup <b>finished at 14:05</b>. The DB disk is quiet now. Yet the slowness continues. Cache hit rate is normal.",
+   state:"The cache's <b>6 candidates go dark</b>. And an eerie fact: <b>whoever started this has already left the scene</b>."},
+  {t:"<b>4. Fix parts one by one</b> — it seems to work, once",
+   act:"Restart the app instances one by one (a reversible operation) → <b>normal for a few minutes</b>. Fixed — or so it seemed.",
+   state:"The app-side <b>36 candidates go dark</b>. …This extinguishing is about to be revoked."},
+  {t:"<b>5. It comes back</b> — extinguished suspects relight",
+   act:"Ten minutes later, <b>slow everywhere again</b>. Restarted instances and untouched ones alike.",
+   state:"<b>36 candidates relight — the count went up</b>. 'Fixed but it returns' is a signal: the strategy of hunting one broken part may itself be missing the point."},
+  {t:"<b>6. Do the accounting</b> — more inside than coming in",
+   act:"User requests arriving at the LB: <b>1.1×</b> normal. Requests reaching the apps: <b>4×</b>. The difference: <b>the LB was re-sending timed-out forwards to another backend</b> (proxy retry) — not health-check traffic; one arriving request was becoming several forwarded ones.",
+   state:"36 candidates uninvolved in the amplification go dark. Not the amount of abnormality but the <b>broken balance</b> made the first real cut."},
+  {t:"<b>7. Arrange them — they form a ring</b> — convergence to a structure, not a point",
+   act:"Order the remaining candidates along the path — <b>no start, no end</b>. Slow → timeout → retry → more load → slower. The backup only lit the fire; what keeps burning is <b>this ring</b>.",
+   state:"The trigger's <b>6 candidates go dark</b> (it explains the start, not the persistence). The remaining 60 are not suspects but <b>members of the loop</b> — the search phase ends; the cutting phase begins."},
+  {t:"<b>8. Cut the ring</b> — no part was replaced",
+   act:"<b>Temporarily disable the LB's proxy retry</b> (a config change, instantly revertible) → <b>all metrics normalize within minutes</b>.",
+   state:"Any point on the ring would have worked — choose where to cut by <b>smallest side effect</b> (retry-off = minimal impact, instant, reversible). Not a single part was broken."},
+  {t:"<b>9. Fix and re-observe</b> — make the ring harder to form",
+   act:"Short-term: keep retries suppressed, lift gradually. Long-term: retry <b>budgets and jitter (backoff)</b>, a circuit breaker that trips on repeated failures, and moving the backup window.",
+   state:"Stability confirmed — done.<div class='opt'><em>Lessons</em>: 'When everything goes abnormal at once, hunt the <b>amplifier</b>, not a culprit.' 'If it returns after fixing, suspect the <b>structure</b>, not a part.'</div>"}
+ ]
+];
+function setLang(l){
+  lang=l;
+  document.documentElement.lang=l;
+  var u=UI[l];
+  document.getElementById('h1').textContent=u.h1;
+  document.getElementById('sub').textContent=u.sub;
+  document.getElementById('t0').textContent=u.t0;
+  document.getElementById('t1').textContent=u.t1;
+  document.getElementById('t2').textContent=u.t2;
+  document.getElementById('t3').textContent=u.t3;
+  document.getElementById('cntpre').textContent=u.cnt;
+  document.getElementById('hint').textContent=u.hint;
+  document.getElementById('h4act').textContent=u.h4a;
+  document.getElementById('h4state').textContent=u.h4s;
+  document.getElementById('prev').textContent=u.prev;
+  document.getElementById('next').textContent=u.next;
+  document.getElementById('langbtn').textContent=u.btn;
+  applyFrame(false);
+}
+
+// ============ 共通エンジン ============
+var W=840,H=520,CX=W/2,CY=H/2,EXTENT=185;
+var cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+var yaw=0.7, pitch=0.4, dragging=false, px=0, py=0, camAnim=null, clock=0;
+
+function wrapA(a){ while(a>Math.PI)a-=2*Math.PI; while(a<-Math.PI)a+=2*Math.PI; return a; }
+function project(x,y,z){
+  var cy_=Math.cos(yaw), sy_=Math.sin(yaw), cp=Math.cos(pitch), sp=Math.sin(pitch);
+  var x1=x*cy_+z*sy_, z1=-x*sy_+z*cy_;
+  return [CX + x1, CY - (y*cp - z1*sp), y*sp + z1*cp];
+}
+function jit(i,k){ var v=Math.sin(i*127.1+k*311.7)*43758.5453; return (v-Math.floor(v)-0.5)*0.5; }
+function lvCoord(li,n,i,k){
+  var v=li-(n-1)/2 + jit(i,k);
+  return v/((n-1)/2||1)*EXTENT*0.72;
+}
+
+function hazeXYZ(i,total){
+  var r=205*Math.sqrt((i+1)/total), a=i*2.39996;
+  return {x:Math.cos(a)*r*1.05, y:Math.sin(a)*r*0.75, z:jit(i,7)*40};
+}
+
+// ============ シナリオ0:入門(時刻ズレ) ============
+function buildIntro(){
+  var S=[], layers=['アプリ','ランタイム','OS','ネットワーク','時刻同期','構成','FS','装置'];
+  ['LB','DNS','認証','設定配布','監視','時刻源'].forEach(function(k){
+    for(var r=0;r<4;r++) S.push({name:k+'-'+(r+1), place:'共有', layer:'共有基盤'});
+  });
+  for(var h=1;h<=12;h++) layers.forEach(function(l){ S.push({name:'Host '+h+'/'+l, place:'Host '+h, layer:l}); });
+  var Yl=['共有基盤'].concat(layers);
+  var Xl=['共有']; for(var h2=1;h2<=12;h2++) Xl.push('Host '+h2);
+  var axesA=[
+    {name:'場所', levels:Xl, tick:[0,1,6,12], get:function(s){return Xl.indexOf(s.place);}},
+    {name:'構成要素', levels:Yl, tick:'all', get:function(s){return Yl.indexOf(s.layer);}},
+    {name:'定型確認の範囲', levels:['範囲内','範囲外'], tick:'all',
+     get:function(s){return (s.layer==='アプリ'||s.layer==='ランタイム'||s.layer==='構成')?1:0;}}
+  ];
+  var frames=[
+   {cut:null, cloud:true, hideAxes:true, cam:{yaw:0.7,pitch:0.4}, axes:axesA, reveal:false,
+    t:"<b>0. 報告の検証</b> — まだ、数えることすらできない",
+    act:"「ログインだけが失敗する」を検証:認証を伴うAPIだけが失敗し、<b>他のAPIは全て正常</b>。原因の型(設定か、コードか、ハードか)は未定——<b>候補を数え上げることができない</b>。",
+    state:"候補:<b>未定の雲</b>。<div class='opt'><em>ゴール</em>:短期=ログイン失敗の停止/長期=原因の言語化。</div>"},
+   {cut:null, cam:{yaw:0.7,pitch:0.4}, axes:axesA, reveal:false,
+    t:"<b>1. 容疑者を決める</b> — 雲が、数えられる点に変わる",
+    act:"宣言:「原因は、<b>どれかのホストの、どれかの部品</b>だ」。この一言で、雲は<b>120の容疑者</b>に解像する。",
+    state:"容疑者の<b>一覧が書ける</b>ようになった。<div class='opt'><em>判定</em>:一覧表が書けるか。書けないなら、まだ雲の中。</div>"},
+   {cut:function(s){return s.place!=='Host 4';}, cam:{yaw:0.05,pitch:0.22}, axes:axesA, reveal:false,
+    t:"<b>2. 場所の軸で切る</b> — ひと太刀で112を消す",
+    act:"失敗したログインをログで突合——<b>すべてHost 4経由</b>。他のホスト経由のログインは成功している。認証サービス自体が原因なら、全ホストで失敗するはずだ。",
+    state:"<b>112候補が一度に消灯、残り8</b>(Host 4の8部品)。<div class='opt'><em>選択肢</em>:Host 4を外せば短期ゴールは今すぐ達成できる(可逆)。</div>"},
+   {cut:function(s){return s.layer==='ネットワーク'||s.layer==='FS'||s.layer==='装置'||s.layer==='OS';}, cam:{yaw:1.05,pitch:0.12}, axes:axesA, reveal:false,
+    t:"<b>3. 動くべきものを確かめる</b> — 定型の確認が拾った",
+    act:"Host 4の上で、正常側の定型確認を回す:名前解決は引ける(dig)、依存先には届く(curl)、ディスクも資源の上限も正常——ネットワーク・FS・装置・OSは無実。そして一項目だけ引っかかる:<b>時計が5分進んでいて、時刻同期サービスが止まっている</b>——正常に動いているべきものの一つに、問題があった。",
+    state:"<b>4候補が消灯、残り4</b>(アプリ、ランタイム、構成、時刻同期)。止まった同期サービスは<b>発見であって、まだ判決ではない</b>。"},
+   {cut:function(s){return s.name!=='Host 4/時刻同期';}, cam:{yaw:0.55,pitch:0.38}, axes:axesA, reveal:true,
+    t:"<b>4. 見立てと検証</b> — 仮説は順番を決め、検証が消す",
+    act:"見立て:進んだ時計が発行するトークンは「未来の時刻」になり、認証が拒否する。これはまだ仮説——<b>最初に確かめる理由</b>にはなるが、何かを消す理由にはならない。検証:時刻を再同期し、同期サービスを再開する(可逆)→<b>ログインの失敗が消えた</b>。",
+    state:"修正がそのまま検証になり、残りの候補(アプリ、ランタイム、構成)を<b>反証した</b>——それらが原因なら、時計を直しても何も変わらなかったはずだ。<b>収束:真因=Host 4の時刻同期の停止。</b>"},
+   {cut:null, cam:{yaw:0.55,pitch:0.38}, axes:axesA, reveal:true,
+    t:"<b>5. 対応と再観測</b>",
+    act:"短期対応は済んでいる(検証がそのまま修正で、しかも可逆だった)。なぜ止まっていたのか——Host 4は今回から<b>IaCで作った最初のノード</b>で、これまで手動で入れていた時刻同期の設定が、コードに含まれていなかった。長期:同期設定をコードへ追加し、時刻同期の監視(動いているか+ずれ幅)を足す。",
+    state:"ゴール判定:両方達成。<div class='opt'><em>prior更新</em>:「認証まわりの失敗は、時刻を早めに確かめる」。priorは探索の順番を決める——容疑者を消すのは、いつも観測と検証。</div>"}
+  ];
+  return {suspects:S, frames:frames, causeSet:{'Host 4/時刻同期':1}, causeLabel:'Host 4の時刻ズレ'};
+}
+
+// ============ シナリオ1:事例(水位超過) ============
+function buildSimple(){
+  var S=[], layers=['アプリ','ランタイム','OS','ネットワーク','時刻同期','構成','FS','装置'];
+  ['LB','DNS','認証','設定配布','監視','時刻源'].forEach(function(k){
+    for(var r=0;r<4;r++) S.push({name:k+'-'+(r+1), place:'共有', layer:'共有基盤'});
+  });
+  for(var h=1;h<=12;h++) layers.forEach(function(l){ S.push({name:'Node '+h+'/'+l, place:'Node '+h, layer:l}); });
+  var Yl=['共有基盤'].concat(layers);
+  var Xl=['共有']; for(var h2=1;h2<=12;h2++) Xl.push('Node '+h2);
+  var axesA=[
+    {name:'場所', levels:Xl, tick:[0,1,6,12], get:function(s){return Xl.indexOf(s.place);}},
+    {name:'構成要素', levels:Yl, tick:'all', get:function(s){return Yl.indexOf(s.layer);}},
+    {name:'書き込み経路への関与', levels:['共通経路','書き込み側'], tick:'all',
+     get:function(s){return (s.layer==='FS'||s.layer==='装置')?1:0;}}
+  ];
+  var frames=[
+   {cut:null, cam:{yaw:0.7,pitch:0.4}, axes:axesA, reveal:false,
+    t:"<b>0. 報告の検証</b> — 容疑者を灯す",
+    act:"「書き込みだけが失敗し始めた。<b>読み出しは正常</b>」を検証。対象は12台のデータストア群——<b>読みは複製からも返せるが、書きはそのキーの担当ノードを通る</b>。原因候補=共有基盤+12ノード×8部品の<b>120点</b>。",
+    state:"候補:全域。<div class='opt'><em>ゴール</em>:短期=書き込み失敗の停止/長期=原因の言語化。</div>"},
+   {cut:function(s){return s.place==='共有';}, cam:{yaw:0.05,pitch:0.22}, axes:axesA, reveal:false,
+    t:"<b>1. 正常側の確認</b> — 共有部を消灯する",
+    act:"動いていて当然のものを一通り確かめる:名前解決(dig)、コーディネータへの疎通(curl)、時刻同期——<b>全て正常</b>。共有部が原因なら全ノードの書き込みが等しく壊れるはずだが、失敗は偏っている。",
+    state:"<b>共有の24候補が消灯</b>。<div class='opt'><em>選択肢</em>:ここまで副作用ゼロ。</div>"},
+   {cut:function(s){return s.place!=='Node 7';}, cam:{yaw:0.05,pitch:0.22}, axes:axesA, reveal:false,
+    t:"<b>2. 範囲の特定</b> — キーの担当で切る",
+    act:"失敗した書き込みのキーを突合——<b>すべてNode 7が担当するキー</b>。他ノード担当のキーへの書き込みは成功している(空間比較)。",
+    state:"<b>88候補が消灯、残り8</b>。<div class='opt'><em>選択肢</em>:Node 7の担当を他ノードへ移せば失敗は止まる(可逆だが、移動には時間がかかる)。<b>短期ゴールへの経路を確保</b>。原因は未言語化。</div>"},
+   {cut:function(s){return !(s.layer==='FS'||s.layer==='装置');}, cam:{yaw:1.05,pitch:0.12}, axes:axesA, reveal:false,
+    t:"<b>3. 層で切る</b> — 書き込みだけが踏む場所",
+    act:"Node 7上でも、<b>読み出しは正常</b>——複製の配信も、既存データの読みも動いている。プロセスは生きて応答している。共通の層(アプリ〜構成)が原因なら読みも壊れるはず——反証で6層を消灯。書きだけが必ず踏むのは、<b>ノードの足元のディスク</b>だ。",
+    state:"残り<b>2候補</b>:ファイルシステムと記憶装置。<div class='opt'><em>選択肢</em>:どちらも見るだけで確かめられる。</div>"},
+   {cut:function(s){return s.name!=='Node 7/FS';}, cam:{yaw:0.55,pitch:0.38}, axes:axesA, reveal:true,
+    t:"<b>4. 直接観測</b> — 見えない水位",
+    act:"ディスク使用率を参照(副作用なし):<b>Node 7だけ、既定の水位(watermark)を超えていた</b>。データストアは水位を超えると、データを守るために<b>自らを書き込み拒否に切り替える</b>。装置のSMARTは正常。エラーログを見返すと、実は最初から「read-only」と書いてあった——仕組みを知らなければ読めない一行だった。",
+    state:"<b>直接の原因=Node 7のディスク水位超過</b>。書きのみ・Node 7担当キーのみ・読みは正常——事実と合う。だが完全性チェックがもう一問残す:<b>なぜNode 7だけが先に超えた?</b>"},
+   {cut:null, cam:{yaw:0.55,pitch:0.38}, axes:axesA, reveal:true,
+    t:"<b>5. なぜNode 7だけか</b> — 症状の場所と、問題の範囲",
+    act:"構成の記録を辿ると、Node 7だけが過去の交換作業で<b>手違いにより小さいディスクのサイズ</b>で再作成されていた。データは設計通り全ノードで増え続けており、<b>他の11台も水位の8割に迫っていた</b>。",
+    state:"短期:Node 7のデータ再配置と不要データの削除(可逆)→失敗消失(反証)。長期:正しいサイズで再作成、水位の監視(超える前に知る)。<div class='opt'><em>prior更新</em>:「書き込みだけの失敗は、守りに入った装置を疑う」「<b>症状が出た場所と、問題の範囲は、別物</b>」。</div>"}
+  ];
+  return {suspects:S, frames:frames, causeSet:{'Node 7/FS':1}, causeLabel:'Node 7のディスク水位超過'};
+}
+
+// ============ シナリオ2:難しい(常駐エージェントのリーク) ============
+function buildHard(){
+  var S=[];
+  var comps=['アプリ','ランタイム','ライブラリ','構成','カーネル','FS','時刻同期','エージェント'];
+  var v23={'Host 2':1,'Host 5':1,'Host 7':1,'Host 9':1,'Host 11':1}; // 自動更新でv2.3になったホスト
+  for(var h=1;h<=12;h++) comps.forEach(function(c){
+    S.push({name:'Host '+h+'/'+c, place:'Host '+h, comp:c, kind:'host',
+      ver:(v23['Host '+h]?'v2.3':'v2.2'),
+      prox:(c==='アプリ'||c==='ランタイム'||c==='構成')?'高':'低'});
+  });
+  ['LB','DNS','認証','設定配布','監視','時刻源'].forEach(function(k){
+    for(var r=0;r<4;r++) S.push({name:k+'-'+(r+1), place:'共有', comp:'共有基盤', kind:'shared',
+      ver:'v2.2', prox:(k==='設定配布')?'高':'低'});
+  });
+  var Yl=comps.concat(['共有基盤']);
+  var Xl=['共有']; for(var h2=1;h2<=12;h2++) Xl.push('Host '+h2);
+  var axesA=[
+    {name:'場所', levels:Xl, tick:[0,1,6,12], get:function(s){return Xl.indexOf(s.place);}},
+    {name:'構成要素', levels:Yl, tick:'all', get:function(s){return Yl.indexOf(s.comp);}},
+    {name:'直近デプロイへの近さ', levels:['低','高'], tick:'all', get:function(s){return s.prox==='高'?1:0;}}
+  ];
+  var axesB=[axesA[0], axesA[1],
+    {name:'エージェントの版', levels:['v2.2','v2.3'], tick:'all', get:function(s){return s.ver==='v2.3'?1:0;}}
+  ];
+  var causeSet={};
+  Object.keys(v23).forEach(function(h){ causeSet[h+'/エージェント']=1; });
+  var frames=[
+   {cut:null, cam:{yaw:0.7,pitch:0.4}, axes:axesA, reveal:false,
+    t:"<b>0. 報告の検証と、終わりの決め方</b>",
+    act:"「たまにAPIの応答が数秒詰まる。日に数回、少しずつ増えている」を検証——再現ログあり、気のせいではない。ゆっくり悪化する型なので、<b>何をもって「直った」と言うか(再発ゼロの観測期間)を先に決めておく</b>。",
+    state:"候補:全域(120)。<div class='opt'><em>先回りの保全</em>:再起動すると手がかりが消える型かもしれない。調べる用に1台残す枠を先に確保しておく。</div>"},
+   {cut:function(s){return s.prox==='高';}, cam:{yaw:1.1,pitch:0.5}, axes:axesA, reveal:false,
+    t:"<b>1. 「デプロイが原因だ」と思いたくなる</b>",
+    act:"症状の始まりが<b>直近のデプロイと同じ週</b>。誰でもまずそう疑う——その直感は捨てなくていいが、証明でもない。幸いデプロイは<b>元に戻せる</b>のでロールバックで確かめる→<b>詰まりは残った</b>。",
+    state:"デプロイで変わる部分(アプリ・ランタイム・設定まわり)の<b>40候補が「戻しても直らない」という事実で消灯</b>。<div class='opt'><em>教訓</em>:元に戻せる操作は、疑いを晴らす最強の道具。……この「同じ週」の正体は後で分かる。</div>"},
+   {cut:null, cam:{yaw:0.05,pitch:0.2}, axes:axesA, reveal:false,
+    t:"<b>2. サービス別・ホスト別に数える</b> — 空振り",
+    act:"発生をサービス別・ホスト別に集計——<b>偏りが見えない</b>。日に数回の事象では、まだ数が足りない。",
+    state:"<b>消灯ゼロ</b>。切れない切り口があるのは普通のこと。記録を貯めながら、別の種類の手がかりを探す。"},
+   {cut:function(s){return s.kind==='host'&&(s.comp==='カーネル'||s.comp==='FS');}, cam:{yaw:0.05,pitch:0.2}, axes:axesA, reveal:false,
+    t:"<b>3. 動いていて当然のものを確かめる</b>",
+    act:"時刻同期は合っているか、名前解決は引けるか(dig)、依存先への疎通(curl)、ディスクの空き、開けるファイル数・接続数の上限に迫っていないか——<b>全て正常</b>。資源が枯渇して詰まる型ではない。",
+    state:"カーネル・ファイルシステムの資源系<b>24候補が消灯</b>。<div class='opt'><em>選択肢</em>:ここまで全て「見るだけ」の調査。何も壊していない。</div>"},
+   {cut:null, cam:{yaw:0.05,pitch:0.2}, axes:axesA, reveal:false,
+    t:"<b>4. グラフの罠</b> — 平均は少数の異常を薄める",
+    act:"メモリのグラフは横ばいに見えていた。だがそれは<b>全12ホストの平均を1本にしたグラフ</b>。数台だけ増えていても、残りの台数に薄められて平らに見える。ホスト1台ずつに分けて描き直すと——<b>数台だけ、階段のように増え続けていた</b>。",
+    state:"<b>消灯ゼロ。ただし見え方が変わった</b>。まとめたグラフは少数の異常を隠す——同じデータでも、描き方で見えるものが違う。"},
+   {cut:function(s){return s.kind==='shared'||s.comp==='時刻同期';}, cam:{yaw:0.05,pitch:0.2}, axes:axesA, reveal:false,
+    t:"<b>5. 連動が切れている</b> — アクセスは増えていないのに",
+    act:"増えている個体を観察すると、<b>アクセス数は平坦なのにメモリだけ増え続けている</b>。負荷のせいなら両者は一緒に動くはず——この連動の切れ方は、外から押されてではなく<b>内側で育つ型</b>(リーク)の特徴。詰まる瞬間はGCやスワップの発生と重なる。",
+    state:"挙動がホストの内側で完結している——外部の共有サービス(LB/DNS/認証など)と時刻同期の<b>32候補が消灯</b>。"},
+   {cut:null, cam:{yaw:1.35,pitch:0.15}, axes:axesA, reveal:false,
+    t:"<b>6. 増える個体と増えない個体を見比べる</b>",
+    act:"サービスも設定も同じ。違いはただ一つ、<b>再起動してからの日数</b>——長く動いている個体ほど育っている。試しに1台を再起動すると一旦元に戻り、また育ち始めた。",
+    state:"<b>消灯ゼロだが、「稼働時間」という比べ方が生まれた</b>。最初から軸として持っていたわけではない——観測が新しい切り口を作ることがある。"},
+   {cut:function(s){return s.comp==='ライブラリ';}, cam:{yaw:1.35,pitch:0.15}, axes:axesA, reveal:false,
+    t:"<b>7. ホストの中に降りる</b>",
+    act:"topでプロセス別にメモリを見る(<b>見るだけ</b>)——太っているのはアプリ本体ではなく、全ホストに同居している<b>監視エージェントのプロセス</b>だった。",
+    state:"アプリ側(ライブラリ)の<b>12候補が消灯、残り12</b>=各ホストのエージェント。"},
+   {cut:function(s){return s.comp==='エージェント'&&s.ver!=='v2.3';}, cam:{yaw:0.5,pitch:0.45}, axes:axesB, reveal:false,
+    t:"<b>8. バージョンで並べ直す</b> — 記録に載らない変更",
+    act:"エージェントの版を一覧にすると、太るのは<b>v2.3の5台だけ</b>。v2.3は先週、エージェント自身の<b>自動更新</b>で入っていた——デプロイの記録には載らない変更。F1で「デプロイと同じ週」に見えたのは、<b>同じ週に別の変更が静かに走っていたから</b>。",
+    state:"<b>7候補が消灯、残り5</b>。「最近何を変えた?」で調べられるのは、記録に残っている変更だけ——自動更新・証明書の自動延長・OSの自動パッチはその外側にいる。"},
+   {cut:null, cam:{yaw:0.5,pitch:0.45}, axes:axesB, reveal:true,
+    t:"<b>9. 検証と収束</b> — 5個の点は、ひとつの原因の5つの現れ",
+    act:"隔離した検証環境でv2.3を数日動かす→<b>同じように育つ(再現)</b>。v2.2に固定すると育たない(<b>逆も確認</b>)。",
+    state:"<b>収束:真因=エージェントv2.3のメモリリーク</b>。台数で数えれば5、バージョンで数えれば1——<b>どう数えるかも選択</b>。<div class='opt'><em>保全</em>:1台は再起動せず隔離したまま、メモリの中身(heap dump)を取得済み。</div>"},
+   {cut:null, cam:{yaw:0.5,pitch:0.45}, axes:axesB, reveal:true,
+    t:"<b>10. 対応と再観測</b>",
+    act:"短期:長く動いている個体の計画再起動+<b>自動更新を一旦止める</b>(どちらも元に戻せる)。長期:開発元へ報告、修正版で解消を確認。",
+    state:"<b>2週間再発ゼロ</b>で完了。<div class='opt'><em>次回への学び</em>:「自動で入る変更も『最近変えたもの』に数える」「まとめたグラフだけで安心しない」。</div>"}
+  ];
+  return {suspects:S, frames:frames, causeSet:causeSet, causeLabel:'エージェント v2.3'};
+}
+
+// ============ シナリオ3:ループ(リトライストーム) ============
+function buildLoop(){
+  var S=[];
+  var comps=['アプリ','ランタイム','構成','カーネル','接続プール','キュー'];
+  for(var h=1;h<=12;h++) comps.forEach(function(c){
+    S.push({name:'H'+h+'/'+c, kind:'host', comp:c, pos:'アプリ層',
+      loopClass:(c==='アプリ')?'アプリ':((c==='接続プール'||c==='キュー')?'プール':null)});
+  });
+  var sharedDef=[
+    ['LB','入口','LB'],['DNS','入口',null],['認証','入口',null],
+    ['キャッシュ','データ層',null],['DB','データ層','DB'],['バックアップ','データ層',null],
+    ['リトライ設定','入口','リトライ'],['タイムアウト設定','入口','タイムアウト']
+  ];
+  sharedDef.forEach(function(d){
+    for(var r=0;r<6;r++) S.push({name:d[0]+'-'+(r+1), kind:'shared', sk:d[0],
+      comp:d[0], pos:d[1], loopClass:d[2]});
+  });
+  var Yl=comps.concat(sharedDef.map(function(d){return d[0];}));
+  var axesA=[
+    {name:'経路上の位置', levels:['入口','アプリ層','データ層'], tick:'all',
+     get:function(s){return ['入口','アプリ層','データ層'].indexOf(s.pos);}},
+    {name:'構成要素', levels:Yl, tick:'all', get:function(s){return Yl.indexOf(s.comp);}},
+    {name:'14:00のイベントへの近さ', levels:['遠い','近い'], tick:'all',
+     get:function(s){return (s.sk==='バックアップ'||s.sk==='DB')?1:0;}}
+  ];
+  var ring=['リトライ','LB','アプリ','プール','DB','タイムアウト'];
+  var appsCut=function(s){return s.kind==='host'&&(s.comp==='アプリ'||s.comp==='ランタイム'||s.comp==='構成');};
+  var frames=[
+   {cut:null, cam:{yaw:0.7,pitch:0.4}, axes:axesA, reveal:false,
+    t:"<b>0. 報告の検証</b> — 今回は「急に、全部が」",
+    act:"14:02から<b>ほぼ全リクエストが遅い</b>。前の2つの事例と違い、散発ではなく全面的、しかも突然。候補120点を灯す。",
+    state:"候補:全域。<div class='opt'><em>覚え書き</em>:急に始まった問題は急に解けることが多い——という経験則を、今回は裏切られることになる。</div>"},
+   {cut:null, cam:{yaw:0.05,pitch:0.25}, axes:axesA, reveal:false,
+    t:"<b>1. 異常なものを探す</b> — 全部が異常",
+    act:"いつもなら「異常なメトリクスの場所」から絞る。だが今日は<b>LBの待ち行列も、アプリの応答時間も、DBの負荷も、全部赤い</b>。",
+    state:"<b>消灯ゼロ——絞れない</b>。系全体が飽和すると、異常は原因のしるしではなく<b>結果としても</b>現れる。「どこが悪いか」の問いが効かない。"},
+   {cut:function(s){return s.kind==='shared'&&(s.sk==='DNS'||s.sk==='認証');}, cam:{yaw:0.05,pitch:0.25}, axes:axesA, reveal:false,
+    t:"<b>2. それでも消せるものは消す</b>",
+    act:"動いていて当然のものを確かめる:名前解決は即答(dig)、トークン発行も速い(curl)。<b>経路の外側は無事</b>。",
+    state:"DNS・認証の<b>12候補が消灯</b>。全面異常の中でも、正常側の確認は変わらず機能する。"},
+   {cut:function(s){return s.sk==='キャッシュ';}, cam:{yaw:1.2,pitch:0.4}, axes:axesA, reveal:false,
+    t:"<b>3. 始まりを探す</b> — 犯人は過去にいた",
+    act:"時系列を巻き戻すと、<b>14:00にDBの自動バックアップ</b>が走り数分間IOが重かった記録。「これだ!」——だがバックアップは<b>14:05に終了済み</b>。今はDBのディスクも静か。なのに遅延は続いている。キャッシュのヒット率も正常。",
+    state:"キャッシュの<b>6候補が消灯</b>。そして不気味な事実:<b>始めた犯人は、もう現場にいない</b>。"},
+   {cut:appsCut, cam:{yaw:0.05,pitch:0.25}, axes:axesA, reveal:false,
+    t:"<b>4. 部品を直して回る</b> — 一度は効いたように見える",
+    act:"アプリを順次再起動(元に戻せる操作)→<b>数分間、正常に戻った</b>。直った——ように見えた。",
+    state:"アプリまわりの<b>36候補が消灯</b>。……このあと、この消灯は取り消されることになる。"},
+   {cut:null, revive:appsCut, cam:{yaw:0.05,pitch:0.25}, axes:axesA, reveal:false,
+    t:"<b>5. 戻ってくる</b> — 消したはずの候補が再点灯する",
+    act:"10分後、<b>また全面的に遅い</b>。再起動した個体も、していない個体も。",
+    state:"<b>36候補が再点灯——残り候補が増えた</b>。「直したのに戻る」は重要な信号:壊れた部品を探す戦略そのものが空振りしている可能性。"},
+   {cut:function(s){return s.kind==='host'&&(s.comp==='カーネル'||s.comp==='ランタイム'||s.comp==='構成');}, cam:{yaw:1.35,pitch:0.15}, axes:axesA, reveal:false,
+    t:"<b>6. 収支を取る</b> — 入りより、中が多い",
+    act:"LBに入ってくるユーザーのリクエストは平常の<b>1.1倍</b>。だがアプリに届いているリクエストは<b>4倍</b>。差分の正体は、<b>LBがタイムアウトした転送を別のバックエンドへ自動で出し直していた</b>こと(転送リトライ)——ヘルスチェックの通信ではなく、1つの着弾が複数の転送に増えていた。",
+    state:"増幅に関与しない<b>36候補が消灯</b>。異常の量ではなく<b>収支の破れ</b>が、初めてこの問題を切った。"},
+   {cut:function(s){return s.sk==='バックアップ';}, cam:{yaw:0.12,pitch:0.18}, axes:axesA, reveal:true,
+    ring:ring, arrows:true, hideAxes:true,
+    t:"<b>7. 並べ直すと、輪になる</b> — 収束先は点ではなく構造",
+    act:"残った候補を経路の順に並べる——<b>始点も終点もない</b>。遅くなる→タイムアウト→リトライ→負荷が増える→さらに遅くなる。バックアップは火を点けただけで、いま燃え続けているのは<b>この輪</b>。",
+    state:"トリガーの<b>6候補が消灯</b>(開始の説明であって、継続の説明ではない)。残り60は容疑者ではなく<b>輪の構成員</b>——探すフェーズは終わり、切るフェーズへ。"},
+   {cut:null, cam:{yaw:0.12,pitch:0.18}, axes:axesA, reveal:true,
+    ring:ring, arrows:true, hideAxes:true, cutEdge:5,
+    t:"<b>8. 輪を切る</b> — どの部品も交換していない",
+    act:"LBの<b>転送リトライを一時的に止める</b>(設定変更・すぐ戻せる)→<b>数分で全メトリクスが正常化</b>。",
+    state:"輪はどこを切ってもよかった——切る場所は<b>副作用の小ささで選ぶ</b>(リトライ停止=影響最小・即時・可逆)。部品はひとつも壊れていなかった。"},
+   {cut:null, cam:{yaw:0.12,pitch:0.18}, axes:axesA, reveal:true,
+    ring:ring, arrows:true, hideAxes:true, cutEdge:5,
+    t:"<b>9. 対応と再観測</b> — 輪を作りにくくする",
+    act:"短期:リトライ抑制を維持しつつ段階的に解除。長期:リトライに<b>上限と揺らぎ(バックオフ+ジッタ)</b>を入れる、失敗が続いたら自動で止まる仕組み(サーキットブレーカ)、バックアップ時刻の変更。",
+    state:"再観測で安定を確認して完了。<div class='opt'><em>次回への学び</em>:「急に全部が異常なら、犯人ではなく<b>増幅</b>を探す」「直したのに戻るなら、部品ではなく<b>構造</b>を疑う」。</div>"}
+  ];
+  return {suspects:S, frames:frames, causeSet:{}, causeLabel:'維持ループ',
+    ringLabels:{'リトライ':'転送リトライ','LB':'LB','アプリ':'アプリ(飽和)','プール':'プール・キュー','DB':'DB','タイムアウト':'タイムアウト'}};
+}
+
+var SCN=[buildIntro(), buildSimple(), buildHard(), buildLoop()];
+SCN.forEach(function(sc){
+  var alive=sc.suspects.map(function(){return true;});
+  sc.aliveByFrame=sc.frames.map(function(f){
+    if(f.cut) alive=alive.map(function(a,i){return a && !f.cut(sc.suspects[i]);});
+    if(f.revive) alive=alive.map(function(a,i){return a || f.revive(sc.suspects[i]);});
+    return alive.slice();
+  });
+});
+function frameCounts(si){
+  return SCN[si].aliveByFrame.map(function(al){return al.filter(Boolean).length;});
+}
+
+// ============ 状態と描画 ============
+var scn=0, fi=0;
+var pos=[], posT=[], alpha=[], alphaT=[];
+
+function initPositions(){
+  var sc=SCN[scn];
+  pos=sc.suspects.map(function(){return {x:0,y:0,z:0};});
+  posT=sc.suspects.map(function(){return {x:0,y:0,z:0};});
+  alpha=sc.suspects.map(function(){return 1;});
+  alphaT=alpha.slice();
+  applyFrame(true);
+}
+function applyFrame(snap){
+  var sc=SCN[scn], f=sc.frames[fi], ax=f.axes;
+  sc.suspects.forEach(function(s,i){
+    var t={
+      x:lvCoord(ax[0].get(s), ax[0].levels.length, i, 1),
+      y:lvCoord(ax[1].get(s), ax[1].levels.length, i, 2),
+      z:lvCoord(ax[2].get(s), ax[2].levels.length, i, 3)
+    };
+    if(f.cloud){ t=hazeXYZ(i, sc.suspects.length); }
+    if(f.ring && s.loopClass && sc.aliveByFrame[fi][i]){
+      var ri=f.ring.indexOf(s.loopClass);
+      if(ri>=0){
+        var ang=ri/f.ring.length*Math.PI*2 - Math.PI/2;
+        t={x:Math.cos(ang)*140 + jit(i,4)*34, y:Math.sin(ang)*140 + jit(i,5)*34, z:jit(i,6)*18};
+      }
+    }
+    posT[i]=t;
+    alphaT[i]=sc.aliveByFrame[fi][i]?1:0.06;
+    if(snap){ pos[i]={x:t.x,y:t.y,z:t.z}; alpha[i]=alphaT[i]; }
+  });
+  camAnim={y0:yaw,p0:pitch,y1:f.cam.yaw,p1:f.cam.pitch,st:performance.now(),T:900};
+  var n=sc.aliveByFrame[fi].filter(Boolean).length;
+  document.getElementById('cnt').textContent=f.cloud?'—':n;
+  document.getElementById('barfill').style.width=(f.cloud?100:(n/sc.suspects.length*100))+'%';
+  var tx=(lang==='en'&&ENT[scn]&&ENT[scn][fi])?ENT[scn][fi]:f;
+  document.getElementById('ftitle').innerHTML=tx.t;
+  document.getElementById('act').innerHTML=tx.act;
+  document.getElementById('state').innerHTML=tx.state;
+  document.getElementById('fdots').textContent=sc.frames.map(function(_,j){return j===fi?'●':'○';}).join('');
+  document.getElementById('prev').disabled=(fi===0);
+  document.getElementById('next').disabled=(fi===sc.frames.length-1);
+}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  var css=getComputedStyle(document.documentElement);
+  var C={muted:css.getPropertyValue('--muted').trim(), faint:css.getPropertyValue('--faint').trim(),
+         ink:css.getPropertyValue('--ink').trim(), line:css.getPropertyValue('--line').trim(),
+         space:css.getPropertyValue('--space').trim(), dead:css.getPropertyValue('--dead').trim(),
+         crash:css.getPropertyValue('--crash').trim(), fixed:css.getPropertyValue('--fixed').trim()};
+  var sc=SCN[scn], f=sc.frames[fi], ax=f.axes;
+
+  if(f.cloud){
+    var fg=ctx.createRadialGradient(CX,CY,10,CX,CY,300);
+    fg.addColorStop(0,'rgba(127,119,221,.30)');
+    fg.addColorStop(0.7,'rgba(127,119,221,.12)');
+    fg.addColorStop(1,'rgba(127,119,221,0)');
+    ctx.fillStyle=fg; ctx.beginPath();
+    ctx.ellipse(CX,CY,330,215,0,0,6.2832); ctx.fill();
+  }
+
+  var dirs=[[1,0,0],[0,1,0],[0,0,1]];
+  ctx.lineWidth=1;
+  if(!f.hideAxes) ax.forEach(function(a,ai){
+    var d=dirs[ai];
+    var p1=project(-d[0]*EXTENT,-d[1]*EXTENT,-d[2]*EXTENT);
+    var p2=project( d[0]*EXTENT, d[1]*EXTENT, d[2]*EXTENT);
+    ctx.strokeStyle=C.line; ctx.beginPath(); ctx.moveTo(p1[0],p1[1]); ctx.lineTo(p2[0],p2[1]); ctx.stroke();
+    ctx.fillStyle=C.muted; ctx.font='12.5px sans-serif'; ctx.textAlign='left';
+    ctx.fillText(tr(a.name), p2[0]+8, p2[1]+4);
+    ctx.fillStyle=C.faint; ctx.font='10px sans-serif';
+    var n=a.levels.length;
+    var ticks=(a.tick==='all')?a.levels.map(function(_,i2){return i2;}):a.tick;
+    ticks.forEach(function(li){
+      var v=(li-(n-1)/2)/((n-1)/2||1)*EXTENT*0.72;
+      var pt=project(d[0]*v,d[1]*v,d[2]*v);
+      ctx.fillText(tr(a.levels[li]), pt[0]+5, pt[1]-4);
+    });
+  });
+
+  var pulse=0.5+0.5*Math.sin(clock*0.006);
+  var pts=sc.suspects.map(function(s,i){
+    var p=project(pos[i].x,pos[i].y,pos[i].z);
+    return {sx:p[0],sy:p[1],depth:p[2],i:i,s:s};
+  });
+  pts.sort(function(a,b){return a.depth-b.depth;});
+  var frontCause=null;
+  pts.forEach(function(p){
+    var t=(p.depth+EXTENT*1.4)/(EXTENT*2.8);
+    var a=alpha[p.i];
+    if(f.cloud){
+      ctx.globalAlpha=0.55*(0.45+0.55*t);
+      ctx.fillStyle=C.space;
+      ctx.beginPath(); ctx.arc(p.sx,p.sy,2.6,0,6.2832); ctx.fill();
+      return;
+    }
+    var isCause=(f.reveal && sc.causeSet[p.s.name]);
+    var r=(2.8+3.2*t)*(a>0.5?1:0.7);
+    if(isCause){
+      ctx.globalAlpha=0.2+0.25*pulse;
+      ctx.fillStyle=C.crash;
+      ctx.beginPath(); ctx.arc(p.sx,p.sy,r+6+3*pulse,0,6.2832); ctx.fill();
+      frontCause=p;
+    }
+    ctx.globalAlpha=a*(0.5+0.5*t);
+    ctx.fillStyle=isCause?C.crash:(a>0.5?C.space:C.dead);
+    ctx.beginPath(); ctx.arc(p.sx,p.sy,r,0,6.2832); ctx.fill();
+  });
+  ctx.globalAlpha=1;
+
+  // 輪の矢印
+  if(f.ring && f.arrows){
+    var n=f.ring.length;
+    var anchors=f.ring.map(function(_,k){
+      var ang=k/n*Math.PI*2 - Math.PI/2;
+      return project(Math.cos(ang)*140, Math.sin(ang)*140, 0);
+    });
+    var col=(f.cutEdge!==undefined)?C.fixed:C.crash;
+    var al=(f.cutEdge!==undefined)?0.75:(0.5+0.35*pulse);
+    for(var k=0;k<n;k++){
+      var A=anchors[k], B=anchors[(k+1)%n];
+      var mx=(A[0]+B[0])/2, my=(A[1]+B[1])/2;
+      var cx2=CX+(mx-CX)*1.42, cy2=CY+(my-CY)*1.42;
+      if(f.cutEdge===k){
+        ctx.fillStyle=C.crash; ctx.font='14px sans-serif'; ctx.textAlign='center';
+        ctx.globalAlpha=1;
+        ctx.fillText('✂', cx2, cy2+5);
+        continue;
+      }
+      ctx.strokeStyle=col; ctx.globalAlpha=al; ctx.lineWidth=1.6;
+      ctx.beginPath(); ctx.moveTo(A[0],A[1]);
+      ctx.quadraticCurveTo(cx2,cy2,B[0],B[1]); ctx.stroke();
+      var dx=B[0]-cx2, dy=B[1]-cy2, L=Math.sqrt(dx*dx+dy*dy)||1;
+      dx/=L; dy/=L;
+      ctx.beginPath();
+      ctx.moveTo(B[0]-dx*10-dy*4, B[1]-dy*10+dx*4);
+      ctx.lineTo(B[0],B[1]);
+      ctx.lineTo(B[0]-dx*10+dy*4, B[1]-dy*10-dx*4);
+      ctx.stroke();
+    }
+    ctx.globalAlpha=1;
+    ctx.font='11.5px sans-serif';
+    f.ring.forEach(function(cls,k){
+      var ang=k/n*Math.PI*2 - Math.PI/2;
+      var pt=project(Math.cos(ang)*196, Math.sin(ang)*196, 0);
+      ctx.fillStyle=C.muted; ctx.textAlign='center';
+      ctx.fillText(tr(sc.ringLabels[cls]), pt[0], pt[1]+4);
+    });
+    if(f.reveal && f.cutEdge===undefined){
+      ctx.fillStyle=C.crash; ctx.globalAlpha=0.55+0.35*pulse;
+      ctx.font='600 13px sans-serif'; ctx.textAlign='center';
+      ctx.fillText(tr('維持ループ'), CX, CY+4);
+      ctx.globalAlpha=1;
+    }
+    if(f.cutEdge!==undefined){
+      ctx.fillStyle=C.fixed;
+      ctx.font='600 13px sans-serif'; ctx.textAlign='center';
+      ctx.fillText(tr('切断済み'), CX, CY+4);
+    }
+  }
+  if(frontCause){
+    ctx.fillStyle=C.ink; ctx.font='600 12px sans-serif'; ctx.textAlign='left';
+    ctx.fillText(tr(sc.causeLabel), frontCause.sx+12, frontCause.sy-8);
+    ctx.strokeStyle=C.crash; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(frontCause.sx+4,frontCause.sy-4); ctx.lineTo(frontCause.sx+10,frontCause.sy-8); ctx.stroke();
+  }
+}
+
+// ============ ループ・操作 ============
+function loop(t){
+  clock=t||0;
+  if(camAnim && !dragging){
+    var u=Math.min(1,(t-camAnim.st)/camAnim.T);
+    var e=u<0.5?2*u*u:1-Math.pow(-2*u+2,2)/2;
+    yaw=camAnim.y0+wrapA(camAnim.y1-camAnim.y0)*e;
+    pitch=camAnim.p0+(camAnim.p1-camAnim.p0)*e;
+    if(u>=1)camAnim=null;
+  }
+  if(pos.length!==SCN[scn].suspects.length){ requestAnimationFrame(loop); return; }
+  SCN[scn].suspects.forEach(function(_,i){
+    pos[i].x+=(posT[i].x-pos[i].x)*0.12;
+    pos[i].y+=(posT[i].y-pos[i].y)*0.12;
+    pos[i].z+=(posT[i].z-pos[i].z)*0.12;
+    alpha[i]+=(alphaT[i]-alpha[i])*0.1;
+  });
+  draw();
+  requestAnimationFrame(loop);
+}
+
+cv.addEventListener('pointerdown',function(e){dragging=true;camAnim=null;px=e.clientX;py=e.clientY;cv.setPointerCapture(e.pointerId);});
+cv.addEventListener('pointermove',function(e){
+  if(!dragging)return;
+  yaw+=(e.clientX-px)*0.008; pitch+=(e.clientY-py)*0.006;
+  pitch=Math.max(-1.5,Math.min(1.5,pitch));
+  px=e.clientX;py=e.clientY;
+});
+cv.addEventListener('pointerup',function(){dragging=false;});
+cv.addEventListener('pointercancel',function(){dragging=false;});
+
+function go(d){
+  var sc=SCN[scn];
+  var ni=Math.max(0,Math.min(sc.frames.length-1,fi+d));
+  if(ni===fi)return;
+  fi=ni; applyFrame(false);
+}
+document.getElementById('prev').onclick=function(){go(-1);};
+document.getElementById('next').onclick=function(){go(1);};
+document.addEventListener('keydown',function(e){
+  if(e.key==='ArrowRight')go(1);
+  if(e.key==='ArrowLeft')go(-1);
+});
+function setScn(i){
+  scn=i; fi=0;
+  for(var k=0;k<4;k++) document.getElementById('t'+k).classList.toggle('on',i===k);
+  initPositions();
+}
+document.getElementById('t0').onclick=function(){setScn(0);};
+document.getElementById('t1').onclick=function(){setScn(1);};
+document.getElementById('t2').onclick=function(){setScn(2);};
+document.getElementById('t3').onclick=function(){setScn(3);};
+document.getElementById('langbtn').onclick=function(){setLang(lang==='ja'?'en':'ja');};
+setScn(0);
+setLang('en');
+(function(){
+  var q=location.search;
+  if(/[?&]embed=1/.test(q)){
+    document.getElementById('h1').style.display='none';
+    document.getElementById('sub').style.display='none';
+  }
+  var m=/[?&]scn=([0-3])/.exec(q); if(m) setScn(+m[1]);
+  var l=/[?&]lang=(ja|en)/.exec(q); if(l) setLang(l[1]);
+})();
+requestAnimationFrame(loop);
+</script>
+</div>
+</body>
+</html>

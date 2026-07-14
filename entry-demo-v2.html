@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>トラブルシューティングの解剖 v2 — 断面を刻む</title>
+<style>
+  :root{
+    --bg:#101418; --panel:#171d23; --panel2:#1c242c; --line:#2a333c;
+    --ink:#dce4ea; --muted:#8b98a5; --faint:#5c6a76;
+    --space:#7f77dd; --healthy:#46525d; --crash:#e06a3e; --fixed:#2f8a68; --skew:#d4a13f;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:"Hiragino Sans","Noto Sans JP",-apple-system,sans-serif;
+    font-size:15px; line-height:1.75;
+    display:flex; justify-content:center; padding:32px 16px 64px;
+  }
+  .wrap{max-width:880px; width:100%}
+  h1{font-size:20px; font-weight:600; margin-bottom:4px}
+  .sub{color:var(--muted); font-size:13px; margin-bottom:14px}
+
+  .phases{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px}
+  .phase{font-size:12px; padding:4px 12px; border-radius:999px; border:1px solid var(--line); color:var(--faint); transition:all .3s}
+  .phase.on{color:var(--ink); border-color:var(--space); background:rgba(127,119,221,.12)}
+
+  .plane{font-size:12.5px; color:var(--muted); margin-bottom:8px; display:flex; align-items:center; gap:8px}
+  .plane b{color:var(--ink); font-weight:600}
+  .triad{display:inline-block; color:var(--space); transition:transform .5s; font-size:14px}
+
+  .persp{perspective:1100px}
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px}
+  .stage3d{transition:transform .34s ease-in-out; transform-style:preserve-3d}
+  svg{display:block; width:100%; height:auto}
+  svg text{font-family:inherit}
+  #blob{transition:all .7s cubic-bezier(.4,0,.2,1)}
+  .dot{transition:transform .6s cubic-bezier(.4,0,.2,1), opacity .5s}
+  .dot circle{transition:fill .5s, stroke .4s, stroke-width .4s, r .5s, fill-opacity .5s}
+  #hostsg{transition:opacity .6s}
+  #chain{transition:opacity .6s}
+  @media(prefers-reduced-motion:reduce){#blob,.dot,.dot circle,#hostsg,#chain,.stage3d{transition:none}}
+
+  .frametitle{font-size:14px; padding:12px 4px 0; color:var(--ink)}
+  .frametitle b{font-weight:600}
+  .tracks{display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px}
+  @media(max-width:640px){.tracks{grid-template-columns:1fr}}
+  .track{background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:12px 14px; min-height:175px}
+  .track h4{font-size:12px; font-weight:600; color:var(--faint); letter-spacing:.06em; margin-bottom:6px}
+  .track div{font-size:13.5px; color:var(--muted)}
+  .track b{color:var(--ink); font-weight:600}
+  .track .opt{margin-top:8px; padding-top:8px; border-top:1px dashed var(--line)}
+  .track .opt em{font-style:normal; color:var(--skew)}
+
+  .ctrl{display:flex; align-items:center; gap:10px; padding:14px 2px 0; flex-wrap:wrap}
+  button{background:none; border:1px solid var(--line); color:var(--ink);
+    border-radius:8px; padding:7px 16px; font-size:13px; cursor:pointer; font-family:inherit}
+  button:hover:not(:disabled){border-color:var(--muted)}
+  button:disabled{opacity:.35; cursor:default}
+  .dots{font-size:10px; color:var(--faint); letter-spacing:3px}
+  .legend{margin-left:auto; display:flex; gap:12px; font-size:12px; color:var(--muted); flex-wrap:wrap}
+  .legend span{display:flex; align-items:center; gap:6px}
+  .sw{width:11px;height:11px;border-radius:50%;display:inline-block}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>トラブルシューティングの解剖</h1>
+  <p class="sub">症例:「120個のプログラムのうち7個が、散発的に異常終了する」— 無知の雲を、断面を刻んで一本の因果連鎖にするまで</p>
+
+  <div class="phases">
+    <span class="phase" id="ph0">雲 — 連続(粗視化)</span>
+    <span class="phase" id="ph1">凝結 — 単位の宣言</span>
+    <span class="phase" id="ph2">断面の探索 — 回転と交差</span>
+    <span class="phase" id="ph3">再凝集 — 単位の再定義</span>
+    <span class="phase" id="ph4">連鎖 — 切断点の選択</span>
+  </div>
+
+  <div class="plane"><span class="triad" id="triad">◈</span>現在の断面:<b id="planeName">—</b></div>
+
+  <div class="persp">
+  <div class="panel stage3d" id="stage">
+    <svg viewBox="0 0 680 420" role="img" aria-label="120個の粒子が雲から凝結し、複数の断面での並べ替えと単位再定義を経て因果連鎖に至る">
+      <defs>
+        <radialGradient id="fog">
+          <stop offset="0%" stop-color="#7f77dd" stop-opacity=".30"/>
+          <stop offset="70%" stop-color="#7f77dd" stop-opacity=".12"/>
+          <stop offset="100%" stop-color="#7f77dd" stop-opacity="0"/>
+        </radialGradient>
+        <marker id="arw" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M2 1L8 5L2 9" fill="none" stroke="#8b98a5" stroke-width="1.5" stroke-linecap="round"/>
+        </marker>
+      </defs>
+
+      <ellipse id="blob" cx="340" cy="215" rx="290" ry="175" fill="url(#fog)" opacity="1"/>
+      <g id="labels"></g>
+      <g id="hostsg" opacity="0"></g>
+      <g id="dotsg"></g>
+
+      <g id="chain" opacity="0">
+        <rect x="22" y="120" width="150" height="58" rx="9" fill="none" stroke="var(--skew)" stroke-width="1.2"/>
+        <text x="97" y="143" text-anchor="middle" font-size="12" fill="var(--ink)">HW-Bのドライバ欠陥</text>
+        <text x="97" y="162" text-anchor="middle" font-size="11" fill="var(--muted)">時刻の刻みを取り損なう</text>
+        <line x1="172" y1="149" x2="194" y2="149" stroke="#8b98a5" marker-end="url(#arw)"/>
+        <rect x="200" y="120" width="120" height="58" rx="9" fill="none" stroke="var(--skew)" stroke-width="1.2"/>
+        <text x="260" y="143" text-anchor="middle" font-size="12" fill="var(--ink)">時刻ズレ</text>
+        <text x="260" y="162" text-anchor="middle" font-size="11" fill="var(--muted)">約1分・特定ホスト群</text>
+        <line x1="320" y1="149" x2="342" y2="149" stroke="#8b98a5" marker-end="url(#arw)"/>
+        <rect x="348" y="120" width="158" height="58" rx="9" fill="none" stroke="var(--crash)" stroke-width="1.2"/>
+        <text x="427" y="143" text-anchor="middle" font-size="12" fill="var(--ink)">ランタイムRの欠陥</text>
+        <text x="427" y="162" text-anchor="middle" font-size="11" fill="var(--muted)">タイムアウト処理の連鎖点</text>
+        <line x1="506" y1="149" x2="528" y2="149" stroke="#8b98a5" marker-end="url(#arw)"/>
+        <rect x="534" y="120" width="124" height="58" rx="9" fill="var(--crash)" fill-opacity=".14" stroke="var(--crash)" stroke-width="1.2"/>
+        <text x="596" y="143" text-anchor="middle" font-size="12" fill="var(--ink)">異常終了</text>
+        <text x="596" y="162" text-anchor="middle" font-size="11" fill="var(--muted)">拡張機能の個体のみ</text>
+
+        <text x="97" y="222" text-anchor="middle" font-size="11.5" fill="var(--muted)">✂ 切断点A</text>
+        <text x="97" y="241" text-anchor="middle" font-size="11" fill="var(--faint)">ドライバ更新</text>
+        <text x="97" y="258" text-anchor="middle" font-size="11" fill="var(--faint)">長期・ベンダー依存</text>
+        <text x="260" y="222" text-anchor="middle" font-size="11.5" fill="var(--fixed)">✂ 切断点B</text>
+        <text x="260" y="241" text-anchor="middle" font-size="11" fill="var(--fixed)">時刻同期の是正</text>
+        <text x="260" y="258" text-anchor="middle" font-size="11" fill="var(--faint)">短期・可逆・即効</text>
+        <text x="427" y="222" text-anchor="middle" font-size="11.5" fill="var(--muted)">✂ 切断点C</text>
+        <text x="427" y="241" text-anchor="middle" font-size="11" fill="var(--faint)">上流へ報告・修正追従</text>
+        <text x="427" y="258" text-anchor="middle" font-size="11" fill="var(--faint)">恒久・時間を要す</text>
+        <text x="340" y="320" text-anchor="middle" font-size="12" fill="var(--muted)">どこを切るかは技術ではなく、ゴール(短期/長期・可逆性・管轄権)が決める</text>
+      </g>
+    </svg>
+  </div>
+  </div>
+
+    <div class="frametitle" id="ftitle"></div>
+    <div class="tracks">
+      <div class="track"><h4>調査 — この段階でやったこと</h4><div id="act"></div></div>
+      <div class="track"><h4>状態 — 残る候補と、いま選べる選択肢</h4><div id="state"></div></div>
+    </div>
+
+    <div class="ctrl">
+      <button id="prev">戻る</button>
+      <button id="next">次へ</button>
+      <span class="dots" id="fdots"></span>
+      <div class="legend">
+        <span><span class="sw" style="background:var(--healthy)"></span>健全</span>
+        <span><span class="sw" style="background:var(--crash)"></span>異常終了</span>
+        <span><span class="sw" style="background:none;border:2px solid var(--skew)"></span>時刻ズレ</span>
+      </div>
+    </div>
+
+<script>
+// ---- 世界の定義 ----
+// ホスト属性: 世代gen / ハードウェアhw / ラックrack / 時刻ズレskew(HW-Bのドライバ欠陥由来)
+// プログラム属性: 拡張機能ext(所属ホストの属性を継承)/ 系統service(論理面)
+// 異常終了条件: gen==G2(ランタイムR同梱) && ext && skew
+var GENS=['G1','G1','G1','G1','G2','G2','G2','G2','G2','G3','G3','G3'];
+var HWS =['A','A','A','A','B','A','A','B','A','A','B','A'];
+var RACKS=['R1','R2','R3','R4','R1','R2','R3','R4','R4','R1','R2','R3'];
+var EXTN=[4,3,4,3,4,3,4,3,4,3,4,3];
+var HOSTS=GENS.map(function(g,i){return {gen:g,hw:HWS[i],rack:RACKS[i],skew:HWS[i]==='B'?1:0};});
+var progs=[];
+HOSTS.forEach(function(h,hi){
+  for(var l=0;l<10;l++){
+    var ext=(l<EXTN[hi])?1:0;
+    progs.push({host:hi, gen:h.gen, rack:h.rack, skew:h.skew, ext:ext,
+      service:'S'+(((hi*10+l)%4)+1),
+      crash:(h.gen==='G2'&&ext===1&&h.skew===1)});
+  }
+});
+
+// ---- レイアウト ----
+function haze(maxR){
+  var GA=2.39996;
+  return progs.map(function(_,i){
+    var r=maxR*Math.sqrt((i+1)/progs.length);
+    var a=i*GA;
+    return [340+r*Math.cos(a)*1.35, 215+r*Math.sin(a)*0.82];
+  });
+}
+function scatter(){
+  return progs.map(function(_,i){
+    return [80+((i*167+((i*53)%17))%520), 70+((i*229)%320)];
+  });
+}
+function pack(keyFn, conf){
+  var idx={};
+  return progs.map(function(d){
+    var g=keyFn(d), c=conf[g];
+    idx[g]=(idx[g]===undefined?-1:idx[g])+1;
+    var j=idx[g];
+    return [c.cx+(j%c.cols-(c.cols-1)/2)*c.sx, c.baseY+Math.floor(j/c.cols)*c.sy];
+  });
+}
+function byService(){ var c={};['S1','S2','S3','S4'].forEach(function(s,i){c[s]={cx:130+i*140,baseY:115,cols:5,sx:21,sy:20};}); return pack(function(d){return d.service;},c); }
+function byRack(){ var c={};['R1','R2','R3','R4'].forEach(function(s,i){c[s]={cx:130+i*140,baseY:115,cols:5,sx:21,sy:20};}); return pack(function(d){return d.rack;},c); }
+function byGen(){ return pack(function(d){return d.gen;},{
+  G1:{cx:150,baseY:108,cols:6,sx:21,sy:19},
+  G2:{cx:340,baseY:108,cols:6,sx:21,sy:19},
+  G3:{cx:530,baseY:108,cols:6,sx:21,sy:19}}); }
+function byExt(){ return pack(function(d){return d.ext;},{
+  1:{cx:215,baseY:108,cols:6,sx:20,sy:19},
+  0:{cx:465,baseY:108,cols:8,sx:19,sy:19}}); }
+function byGrid(){ return pack(function(d){return d.gen+'-'+d.ext;},{
+  'G1-1':{cx:150,baseY:92,cols:4,sx:19,sy:17},
+  'G2-1':{cx:340,baseY:92,cols:5,sx:19,sy:17},
+  'G3-1':{cx:530,baseY:92,cols:4,sx:19,sy:17},
+  'G1-0':{cx:150,baseY:245,cols:5,sx:19,sy:17},
+  'G2-0':{cx:340,baseY:245,cols:6,sx:19,sy:17},
+  'G3-0':{cx:530,baseY:245,cols:5,sx:19,sy:17}}); }
+var hostPos=(function(){
+  var A=[[110,150],[190,150],[270,150],[110,225],[190,225],[270,225],[110,300],[190,300],[270,300]];
+  var B=[[490,170],[570,170],[530,255]];
+  var ai=0,bi=0;
+  return HOSTS.map(function(h){return h.hw==='A'?A[ai++]:B[bi++];});
+})();
+function byHost(){
+  return progs.map(function(d,i){
+    var p=hostPos[d.host];
+    return [p[0]+((i%3)-1)*4, p[1]+((Math.floor(i/3)%3)-1)*4];
+  });
+}
+
+// ---- ラベル ----
+var L={
+  none:[],
+  service:[[130,60,'系統S1'],[270,60,'系統S2'],[410,60,'系統S3'],[550,60,'系統S4']],
+  rack:[[130,60,'ラックR1'],[270,60,'ラックR2'],[410,60,'ラックR3'],[550,60,'ラックR4']],
+  gen:[[150,60,'世代G1'],[340,60,'世代G2'],[530,60,'世代G3']],
+  ext:[[215,60,'拡張機能 あり'],[465,60,'拡張機能 なし']],
+  grid:[[150,52,'G1'],[340,52,'G2 (ランタイムR同梱)'],[530,52,'G3'],
+        [52,112,'拡張あり','end'],[52,265,'拡張なし','end']],
+  hosts:[[190,96,'HW-A 搭載ホスト'],[530,96,'HW-B 搭載ホスト']]
+};
+
+// ---- フレーム定義 ----
+var F=[
+ {ph:0, plane:'—(未凝結)', blob:[340,215,290,175,1], mode:'haze', hz:200, lab:'none', skewV:false, hOp:0, cOp:0, flip:false,
+  t:"<b>0. 報告の検証</b> — 雲を描く前に、空間そのものを確かめる",
+  act:"「一部のプログラムが不定期に異常終了する」を検証:120個体中<b>7個体</b>、同一シグネチャ、散発(数%オーダー)。誤検知でも期待値ズレでもない。",
+  state:"候補:<b>全域</b>。原因の型(設定か、ソフトか、ハードか)すら未定——まだ点は打てない。<b>無知は雲として表すのが正直</b>。よく見ると雲は無数の粒でできているが、まだ個体を区別する言葉がない。<div class='opt'><em>選択肢</em>:情報不足。動かない。</div>"},
+ {ph:0, plane:'—(未凝結)', blob:[340,215,290,175,1], mode:'haze', hz:200, lab:'none', skewV:false, hOp:0, cOp:0, flip:false,
+  t:"<b>1. ゴール設定</b> — 評価関数を先に固定する",
+  act:"短期ゴール:<b>業務影響の停止</b>。長期ゴール:発火条件の言語化と恒久対処。散発性ゆえ「直った」判定には<b>観測期間の設計</b>が要ることも先に合意。",
+  state:"候補:全域。<div class='opt'><em>証拠保全</em>:異常終了した1個体を隔離保存、残りは再起動——復旧と現場保存の両立(複製可能性というITの特権)。</div>"},
+ {ph:0, plane:'—(未凝結)', blob:[350,220,185,115,1], mode:'haze', hz:118, lab:'none', skewV:false, hOp:0, cOp:0, flip:false,
+  t:"<b>2. 正常側の確認</b> — 雲を外側から削る",
+  act:"共有基盤・依存先・直近変更・<b>見えない天井</b>(fd/接続追跡/ディスク)を点検(すべて副作用なし)。異常なし。<b>相関の破れ</b>も点検:流量と処理の収支は、特定個体の内側でだけ崩れている。",
+  state:"全個体に共通の層が外れ、雲は「<b>個体差</b>」の領域へ収縮。<div class='opt'><em>選択肢</em>:原因の型が「個体の属性」に絞れた——凝結の条件が整う。</div>"},
+ {ph:1, plane:'散布(まだ整列していない)', blob:[350,220,185,115,0], mode:'solid', lay:scatter, lab:'none', skewV:false, hOp:0, cOp:0, flip:false,
+  t:"<b>3. 凝結</b> — 分析単位を宣言する",
+  act:"宣言:<b>1点=プログラム個体</b>。この宣言によって雲は120個の点に解像する——<b>ホスト単位で宣言していれば12個</b>だった。粒の数は雲の性質ではなく、宣言の帰結。以後、証拠は個体に付着し、行為は個体に適用でき、容疑者は一覧に書ける。",
+  state:"断面(並べ替え)が可能になった。7個の赤が初めて見える。<div class='opt'><em>選択肢</em>:どの面から切るか——仮説は<b>順序付けにだけ</b>使い、候補は消さない。</div>"},
+ {ph:2, plane:'論理面:サービス系統', blob:[350,220,185,115,0], mode:'solid', lay:byService, lab:'service', skewV:false, hOp:0, cOp:0, flip:true,
+  t:"<b>4. 断面1:論理面</b> — この面に規則性はない",
+  act:"サービス系統で並べる。赤は<b>4系統すべてに分散</b>——論理的な所属は条件ではない。一枚削れた。",
+  state:"収穫:「系統」の軸が球から外れた。<div class='opt'><em>注目</em>:いま隣り合っている点は、次の面ではバラバラになる。<b>近さはその面の産物</b>であって、点の性質ではない。</div>"},
+ {ph:2, plane:'物理面:ラック配置', blob:[350,220,185,115,0], mode:'solid', lay:byRack, lab:'rack', skewV:false, hOp:0, cOp:0, flip:true,
+  t:"<b>5. 断面2:物理面</b> — 弱い偏り。決定打ではない",
+  act:"ラック(物理配置)で並べ直す。論理面で隣だった点が離れ、無関係だった点が隣り合う。赤は<b>2つのラックに跨って弱く偏る</b>が、同じラックの大半は健全。",
+  state:"物理的な近さも決定打ではない。だが弱い偏りは<b>「ホスト粒度の何か」の予兆</b>として記録(枝刈りはしない)。<div class='opt'><em>選択肢</em>:属性の面に移る。</div>"},
+ {ph:2, plane:'実行系の面:基盤世代', blob:[350,220,185,115,0], mode:'solid', lay:byGen, lab:'gen', skewV:false, hOp:0, cOp:0, flip:true,
+  t:"<b>6. 断面3:実行系の面</b> — 相関、しかし不完全",
+  act:"基盤世代で切る。赤は<b>すべてG2</b>に整列。だがG2の50個体中43個体は健全。<b>完全性チェック:「G2が悪い」説は健全なG2を説明できない</b>。anchoringの誘惑が最大の地点。",
+  state:"候補:G2に関係する何か(条件は未完)。<div class='opt'><em>選択肢</em>:短期対処は打てる:<b>G2からの退避</b>(可逆)を実施→異常終了は停止。<b>短期ゴール達成、長期ゴールは未達のまま</b>。</div>"},
+ {ph:2, plane:'構成の面:拡張機能', blob:[350,220,185,115,0], mode:'solid', lay:byExt, lab:'ext', skewV:false, hOp:0, cOp:0, flip:true,
+  t:"<b>7. 断面4:構成の面</b> — どの単一面でも揃わない",
+  act:"面を回す。赤は<b>すべて拡張機能あり</b>側へ移動。だが拡張ありの42個体中35個体は健全。",
+  state:"単一条件では説明不能→<b>複合要因モード</b>へ。<div class='opt'><em>選択肢</em>:2つの面を同時に張る(交差)。ここまでの調査は全て副作用なし(集計のみ)。</div>"},
+ {ph:2, plane:'交差面:世代×拡張', blob:[350,220,185,115,0], mode:'solid', lay:byGrid, lab:'grid', skewV:false, hOp:0, cOp:0, flip:true,
+  t:"<b>8. 交差:G×拡張の格子</b> — 集中する、が、まだ足りない",
+  act:"赤は<b>(G2, 拡張あり)セルに集中</b>(18個中7個)。検証環境でG2×拡張を再現構成(<b>副作用あり調査・切り戻し前提</b>)→<b>再現しない</b>。",
+  state:"セル内に健全個体が11残る。第3の条件が要る。<div class='opt'><em>選択肢</em>:セル内の落ちた個体と健全個体の<b>差分比較</b>——最小の比較母集団に絞る。</div>"},
+ {ph:2, plane:'交差面+環境:時刻ズレ', blob:[350,220,185,115,0], mode:'solid', lay:byGrid, lab:'grid', skewV:true, hOp:0, cOp:0, flip:false,
+  t:"<b>9. 第3の条件と交絡</b> — 時刻ズレ、そしてG2はRの代理だった",
+  act:"差分=<b>時刻ズレ(黄リング)</b>。交絡の発見:G2は<b>通信ランタイムRを同梱</b>。真因条件=R×拡張×ズレ。G3のズレ×拡張個体が健全な事実(Rが無い)とも整合——完全性チェック通過。",
+  state:"候補:ほぼ確定。<div class='opt'><em>残る問い</em>:なぜズレは特定の個体に偏る?個体の属性というより、<b>下の層の属性</b>では?</div>"},
+ {ph:3, plane:'ハードウェアの面(単位=ホスト)', blob:[350,220,185,115,0], mode:'host', lay:byHost, lab:'hosts', skewV:true, hOp:1, cOp:0, flip:true,
+  t:"<b>10. 再凝集</b> — 点をホストに再定義する",
+  act:"ズレを<b>ホストの属性</b>として再集計(単位の切り替え)。120の点が12のホストに再凝集した瞬間、ズレは<b>すべてHW-B搭載ホスト</b>に集中する。ドライバの欠陥が源。",
+  state:"<b>単位の再定義は、面の回転と並ぶ第一級の操作</b>。断面2の「弱い偏り」の正体はこれ——ホスト粒度の原因は、プログラム粒度の面では常にぼやけて見える。<div class='opt'><em>選択肢</em>:真因は一点ではなく<b>連鎖</b>として全容が見えた。</div>"},
+ {ph:4, plane:'因果連鎖', blob:[350,220,185,115,0], mode:'chain', lay:byHost, lab:'none', skewV:false, hOp:0, cOp:1, flip:false,
+  t:"<b>11. 連鎖と切断点</b> — どこを直すかはゴールが決める",
+  act:"検証環境で連鎖全体を再現、ズレ是正で再現消失(<b>反証側も通過</b>)。短期:<b>時刻同期の是正</b>(切断点B、可逆・即効)+退避の解除。長期:ドライバ更新の追従(A)とRの欠陥の上流報告(C)。",
+  state:"<b>2週間の観測期間</b>で再発ゼロ→完了。<div class='opt'><em>prior更新</em>:「世代との相関を見たら、同梱物との交絡を疑う」を台帳へ。障害をまたぐ外側のループが閉じる。</div>"}
+];
+
+// ---- 描画 ----
+var svgNS='http://www.w3.org/2000/svg';
+var dotsg=document.getElementById('dotsg');
+var dotEls=progs.map(function(d){
+  var g=document.createElementNS(svgNS,'g');
+  g.setAttribute('class','dot');
+  var c=document.createElementNS(svgNS,'circle');
+  c.setAttribute('r','2.6'); c.setAttribute('cx','0'); c.setAttribute('cy','0');
+  g.appendChild(c); dotsg.appendChild(g);
+  return {g:g,c:c,d:d};
+});
+var hostsg=document.getElementById('hostsg');
+HOSTS.forEach(function(h,i){
+  var c=document.createElementNS(svgNS,'circle');
+  c.setAttribute('cx',hostPos[i][0]); c.setAttribute('cy',hostPos[i][1]);
+  c.setAttribute('r','16');
+  c.setAttribute('fill', h.skew?'var(--skew)':'var(--healthy)');
+  c.setAttribute('fill-opacity', h.skew?'.85':'1');
+  hostsg.appendChild(c);
+});
+
+var fi=0;
+function $(id){return document.getElementById(id);}
+function render(){
+  var f=F[fi];
+  var b=$('blob');
+  b.setAttribute('cx',f.blob[0]); b.setAttribute('cy',f.blob[1]);
+  b.setAttribute('rx',f.blob[2]); b.setAttribute('ry',f.blob[3]);
+  b.setAttribute('opacity',f.blob[4]);
+  var pos = (f.mode==='haze') ? haze(f.hz) : f.lay();
+  dotEls.forEach(function(n,i){
+    n.g.style.transform='translate('+pos[i][0]+'px,'+pos[i][1]+'px)';
+    var d=n.d;
+    if(f.mode==='haze'){
+      n.g.style.opacity='1';
+      n.c.setAttribute('r','2.6');
+      n.c.setAttribute('fill','var(--space)');
+      n.c.setAttribute('fill-opacity','.55');
+      n.c.setAttribute('stroke','none'); n.c.setAttribute('stroke-width','0');
+    }else if(f.mode==='solid'){
+      n.g.style.opacity='1';
+      n.c.setAttribute('r','5.5');
+      n.c.setAttribute('fill', d.crash?'var(--crash)':'var(--healthy)');
+      n.c.setAttribute('fill-opacity','1');
+      if(f.skewV && d.skew){ n.c.setAttribute('stroke','var(--skew)'); n.c.setAttribute('stroke-width','2'); }
+      else{ n.c.setAttribute('stroke','none'); n.c.setAttribute('stroke-width','0'); }
+    }else{ // host / chain
+      n.g.style.opacity='0';
+      n.c.setAttribute('r','3.5');
+    }
+  });
+  hostsg.setAttribute('opacity',f.hOp);
+  $('chain').setAttribute('opacity',f.cOp);
+  var lg=$('labels'); lg.innerHTML='';
+  L[f.lab].forEach(function(l){
+    var t=document.createElementNS(svgNS,'text');
+    t.setAttribute('x',l[0]); t.setAttribute('y',l[1]);
+    t.setAttribute('font-size','12.5'); t.setAttribute('fill','var(--muted)');
+    t.setAttribute('text-anchor', l[3]||'middle');
+    t.textContent=l[2]; lg.appendChild(t);
+  });
+  for(var p=0;p<5;p++){ $('ph'+p).classList.toggle('on', p===f.ph); }
+  $('planeName').textContent=f.plane;
+  $('triad').style.transform='rotate('+(fi*38)+'deg)';
+  $('ftitle').innerHTML=f.t;
+  $('act').innerHTML=f.act;
+  $('state').innerHTML=f.state;
+  $('fdots').textContent=F.map(function(_,j){return j===fi?'●':'○';}).join('');
+  $('prev').disabled=(fi===0); $('next').disabled=(fi===F.length-1);
+}
+var busy=false;
+function go(dir){
+  if(busy) return;
+  var ni=Math.max(0,Math.min(F.length-1,fi+dir));
+  if(ni===fi) return;
+  var stage=$('stage');
+  if(F[ni].flip){
+    busy=true;
+    stage.style.transform='rotateY(88deg)';
+    setTimeout(function(){
+      fi=ni; render();
+      stage.style.transform='rotateY(0deg)';
+      setTimeout(function(){busy=false;},360);
+    },350);
+  }else{
+    fi=ni; render();
+  }
+}
+$('prev').onclick=function(){go(-1);};
+$('next').onclick=function(){go(1);};
+document.addEventListener('keydown',function(e){
+  if(e.key==='ArrowRight')go(1);
+  if(e.key==='ArrowLeft')go(-1);
+});
+render();
+(function(){
+  if(/[?&]embed=1/.test(location.search)){
+    var h=document.querySelector('h1'); if(h) h.style.display='none';
+    var sb=document.querySelector('.sub'); if(sb) sb.style.display='none';
+  }
+})();
+</script>
+</div>
+</body>
+</html>

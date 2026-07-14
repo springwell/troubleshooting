@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>回転ラボ — 揃って見える角度と、崩れない条件</title>
+<style>
+  :root{
+    --bg:#101418; --panel:#171d23; --panel2:#1c242c; --line:#2a333c;
+    --ink:#dce4ea; --muted:#8b98a5; --faint:#5c6a76;
+    --space:#7f77dd; --healthy:#5a6874; --crash:#e06a3e; --skew:#d4a13f; --fixed:#2f8a68;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:"Hiragino Sans","Noto Sans JP",-apple-system,sans-serif;
+    font-size:15px; line-height:1.75;
+    display:flex; justify-content:center; padding:32px 16px 64px;
+  }
+  .wrap{max-width:880px; width:100%}
+  h1{font-size:20px; font-weight:600; margin-bottom:4px}
+  .sub{color:var(--muted); font-size:13px; margin-bottom:14px}
+
+  .steps{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px}
+  .stepbtn{font-size:12.5px; padding:5px 13px; border-radius:999px; border:1px solid var(--line);
+    color:var(--faint); background:none; cursor:pointer; font-family:inherit; transition:all .25s}
+  .stepbtn:hover{border-color:var(--muted)}
+  .stepbtn.on{color:var(--ink); border-color:var(--space); background:rgba(127,119,221,.12)}
+
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px}
+  canvas{display:block; width:100%; height:auto; border-radius:8px; background:var(--panel2);
+    touch-action:none; cursor:grab}
+  canvas:active{cursor:grabbing}
+
+  .axes{display:flex; gap:10px; flex-wrap:wrap; padding:12px 4px 2px; align-items:center}
+  .axes label{font-size:12.5px; color:var(--faint)}
+  select{background:var(--panel2); color:var(--ink); border:1px solid var(--line);
+    border-radius:7px; padding:5px 8px; font-size:13px; font-family:inherit}
+  .guidebtn{background:none; border:1px solid var(--space); color:var(--ink);
+    border-radius:8px; padding:6px 14px; font-size:13px; cursor:pointer; font-family:inherit; margin-left:auto}
+  .guidebtn:hover{background:rgba(127,119,221,.12)}
+  .guidebtn:disabled{opacity:.3; border-color:var(--line); cursor:default}
+  .cutprog{font-size:12px; color:var(--faint); letter-spacing:2px}
+
+  .lesson{background:var(--panel2); border:1px solid var(--line); border-radius:10px;
+    padding:12px 14px; margin-top:12px; min-height:96px}
+  .lesson h4{font-size:12px; font-weight:600; color:var(--faint); letter-spacing:.06em; margin-bottom:6px}
+  .lesson div{font-size:13.5px; color:var(--muted)}
+  .lesson b{color:var(--ink); font-weight:600}
+  .lesson em{font-style:normal; color:var(--skew)}
+  .legend{display:flex; gap:12px; font-size:12px; color:var(--muted); flex-wrap:wrap; padding:10px 4px 0}
+  .legend span{display:flex; align-items:center; gap:6px}
+  .sw{width:11px;height:11px;border-radius:50%;display:inline-block}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>回転ラボ</h1>
+  <p class="sub">ドラッグで空間を回す。整列する角度の近くで手を離すと吸い込まれて止まる——問題は、回しても崩れないかどうか</p>
+
+  <div class="steps">
+    <button class="stepbtn" id="s0">1. 散らばる組</button>
+    <button class="stepbtn" id="s1">2. 揃って見える…が、崩れる組</button>
+    <button class="stepbtn" id="s2">3. 段階を踏んで切る組</button>
+    <button class="stepbtn" id="s3">自由モード</button>
+  </div>
+
+  <div class="panel">
+    <canvas id="cv" width="840" height="520"></canvas>
+    <div class="axes">
+      <label>X: <select id="ax"></select></label>
+      <label>Y: <select id="ay"></select></label>
+      <label>Z: <select id="az"></select></label>
+      <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="ring"> ズレを表示</label>
+      <span class="cutprog" id="cutprog"></span>
+      <button class="guidebtn" id="guide">▸ 次の切断面へ</button>
+    </div>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--healthy)"></span>健全</span>
+      <span><span class="sw" style="background:var(--crash)"></span>異常終了</span>
+      <span><span class="sw" style="background:none;border:2px solid var(--skew)"></span>時刻ズレ</span>
+    </div>
+  </div>
+
+  <div class="lesson">
+    <h4>この組で分かること</h4>
+    <div id="lessonText"></div>
+  </div>
+
+<script>
+// ---- 世界(entry-demo v2と同一) ----
+var GENS=['G1','G1','G1','G1','G2','G2','G2','G2','G2','G3','G3','G3'];
+var HWS =['A','A','A','A','B','A','A','B','A','A','B','A'];
+var RACKS=['R1','R2','R3','R4','R1','R2','R3','R4','R4','R1','R2','R3'];
+var EXTN=[4,3,4,3,4,3,4,3,4,3,4,3];
+var progs=[];
+GENS.forEach(function(g,hi){
+  var skew=(HWS[hi]==='B')?1:0;
+  for(var l=0;l<10;l++){
+    var ext=(l<EXTN[hi])?1:0;
+    progs.push({gen:g, rack:RACKS[hi], skew:skew, ext:ext,
+      service:'S'+(((hi*10+l)%4)+1),
+      crash:(g==='G2'&&ext===1&&skew===1)});
+  }
+});
+
+var ATTRS={
+  service:{name:'系統(論理)', levels:['S1','S2','S3','S4'], get:function(d){return ['S1','S2','S3','S4'].indexOf(d.service);}},
+  rack:{name:'ラック(物理)', levels:['R1','R2','R3','R4'], get:function(d){return ['R1','R2','R3','R4'].indexOf(d.rack);}},
+  gen:{name:'世代(実行系)', levels:['G1','G2','G3'], get:function(d){return ['G1','G2','G3'].indexOf(d.gen);}},
+  ext:{name:'拡張機能', levels:['なし','あり'], get:function(d){return d.ext;}},
+  skew:{name:'時刻ズレ(環境)', levels:['なし','あり'], get:function(d){return d.skew;}}
+};
+var KEYS=['service','rack','gen','ext','skew'];
+
+function jit(i,k){ var v=Math.sin(i*127.1+k*311.7)*43758.5453; return (v-Math.floor(v)-0.5)*0.52; }
+
+// ---- 3D状態 ----
+var yaw=0.7, pitch=0.42, auto=true, animating=false;
+var sel={x:'service', y:'rack', z:'gen'};
+var showRing=false;
+var EXTENT=190;
+var clock=0;
+
+function coord(d,i,key,k){
+  var a=ATTRS[key], n=a.levels.length;
+  var v=a.get(d)-(n-1)/2 + jit(i,k);
+  return v/((n-1)/2 || 1) * EXTENT * 0.72;
+}
+
+var cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+var W=840,H=520,CX=W/2,CY=H/2;
+
+function project(x,y,z){
+  var cy_=Math.cos(yaw), sy_=Math.sin(yaw);
+  var cp=Math.cos(pitch), sp=Math.sin(pitch);
+  var x1=x*cy_+z*sy_, z1=-x*sy_+z*cy_;
+  var y1=y*cp - z1*sp, z2=y*sp + z1*cp;
+  return [CX+x1, CY - y1, z2];
+}
+
+function wrapA(a){ while(a>Math.PI)a-=2*Math.PI; while(a<-Math.PI)a+=2*Math.PI; return a; }
+function targDist(t){ var dy=wrapA(yaw-t.yaw), dp=pitch-t.pitch; return Math.sqrt(dy*dy+dp*dp); }
+
+// ---- ガイドステップと切断面ターゲット ----
+var LESSONS=[
+ {x:'service',y:'rack',z:'gen',ring:false,
+  targets:[{yaw:Math.PI/2,pitch:0,label:'唯一の規則性',note:'系統もラックも無関係——だが世代G2の層に赤が並ぶ'}],
+  txt:"<b>散らばる組:系統×ラック×世代。</b>回してみる——赤(7個)は論理面でも物理面でもまとまらない。<em>▸ボタンか手動</em>で整列角に近づくと吸い込まれる:唯一の規則性は<b>世代の層</b>。この時点で言えるのは「系統とラックは条件ではない」ことだけ。まだ枝刈りはしない。"},
+ {x:'gen',y:'ext',z:'service',ring:false,
+  targets:[{yaw:0,pitch:0,label:'揃って見える角度',note:'系統が奥行きに畳まれ、赤が(G2, あり)に整列して見える'},
+           {yaw:0.85,pitch:0.5,label:'…回すと崩れる',note:'同じ(G2, あり)に健全な点が混ざっている——射影の錯覚だった'}],
+  txt:"<b>揃って見える組:世代×拡張×系統。</b>切断面1で赤は<b>一列に整列して見える</b>。だが切断面2に回すと、同じ場所に健全な点が重なっているのが分かる。<em>一つの角度で揃って見えることは、証明ではない</em>——これがanchoringの図形的な正体。都合の悪い角度を自分から探しにいくのが検証。"},
+ {x:'gen',y:'ext',z:'skew',ring:true,
+  targets:[{yaw:0,pitch:0,label:'第1の切断:世代×拡張',note:'ズレが奥行きに畳まれ、まだ健全と混ざって見える'},
+           {yaw:Math.PI/2,pitch:0,label:'第2の切断:拡張×ズレ',note:'世代が畳まれ、G3のズレ×拡張(健全)がまだ混ざる'},
+           {yaw:0.62,pitch:0.44,label:'第3の切断:三条件の交点',note:'三つの軸すべてで切れた。ここから回しても、もう混ざらない'}],
+  txt:"<b>段階を踏んで切る組:世代×拡張×時刻ズレ。</b>▸で切断面を一枚ずつ進める。第1の切断も第2の切断も、二軸では<b>まだ健全が混ざる</b>。第3の切断=三条件の交点に達したとき、赤は一つの格子セルに孤立し、<b>どう回しても崩れない</b>。回転不変の整列だけが真の条件——完全性チェックの図形版であり、「もう一本軸を探せ」の終了条件。"},
+ {x:null,y:null,z:null,ring:false, targets:[],
+  txt:"<b>自由モード。</b>軸を自由に組み替えて確かめる:誤った組には必ず「揃って見える角度」があり、正しい組には「崩れる角度」がない。<em>視点の回転とは、次にどの影を見るかの選択</em>——そして検証とは、都合の悪い角度を自分から探しにいくことだ。"}
+];
+var cur=0, gIdx=-1, lockT=null;
+
+// ---- 描画 ----
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  var css=getComputedStyle(document.documentElement);
+  var C={muted:css.getPropertyValue('--muted').trim(), faint:css.getPropertyValue('--faint').trim(),
+         ink:css.getPropertyValue('--ink').trim(),
+         healthy:css.getPropertyValue('--healthy').trim(), crash:css.getPropertyValue('--crash').trim(),
+         skew:css.getPropertyValue('--skew').trim(), line:css.getPropertyValue('--line').trim(),
+         space:css.getPropertyValue('--space').trim(), panel:css.getPropertyValue('--panel').trim()};
+
+  // ロック判定
+  lockT=null;
+  var ts=LESSONS[cur].targets;
+  for(var i=0;i<ts.length;i++){ if(targDist(ts[i])<0.09){ lockT=ts[i]; break; } }
+
+  // 軸
+  var axes=[{key:sel.x,dir:[1,0,0]},{key:sel.y,dir:[0,1,0]},{key:sel.z,dir:[0,0,1]}];
+  ctx.lineWidth=1;
+  axes.forEach(function(ax){
+    var p1=project(-ax.dir[0]*EXTENT,-ax.dir[1]*EXTENT,-ax.dir[2]*EXTENT);
+    var p2=project( ax.dir[0]*EXTENT, ax.dir[1]*EXTENT, ax.dir[2]*EXTENT);
+    ctx.strokeStyle=C.line; ctx.beginPath(); ctx.moveTo(p1[0],p1[1]); ctx.lineTo(p2[0],p2[1]); ctx.stroke();
+    ctx.fillStyle=C.muted; ctx.font='12.5px sans-serif'; ctx.textAlign='left';
+    ctx.fillText(ATTRS[ax.key].name, p2[0]+8, p2[1]+4);
+    var a=ATTRS[ax.key], n=a.levels.length;
+    ctx.fillStyle=C.faint; ctx.font='10.5px sans-serif';
+    for(var li=0;li<n;li++){
+      var v=(li-(n-1)/2)/((n-1)/2||1)*EXTENT*0.72;
+      var pt=project(ax.dir[0]*v, ax.dir[1]*v, ax.dir[2]*v);
+      ctx.fillText(a.levels[li], pt[0]+5, pt[1]-5);
+    }
+  });
+
+  // 点
+  var pulse = lockT ? (0.5+0.5*Math.sin(clock*0.006)) : 0;
+  var pts=progs.map(function(d,i){
+    var x=coord(d,i,sel.x,1), y=coord(d,i,sel.y,2), z=coord(d,i,sel.z,3);
+    var p=project(x,y,z);
+    return {sx:p[0], sy:p[1], depth:p[2], d:d};
+  });
+  pts.sort(function(a,b){return a.depth-b.depth;});
+  pts.forEach(function(p){
+    var t=(p.depth+EXTENT*1.4)/(EXTENT*2.8);
+    var r=3.2+3.4*t, al=0.45+0.55*t;
+    if(lockT && p.d.crash){
+      ctx.globalAlpha=0.18+0.22*pulse;
+      ctx.fillStyle=C.crash;
+      ctx.beginPath(); ctx.arc(p.sx,p.sy,r+5+3*pulse,0,6.2832); ctx.fill();
+    }
+    ctx.globalAlpha=al;
+    ctx.fillStyle=p.d.crash?C.crash:C.healthy;
+    ctx.beginPath(); ctx.arc(p.sx,p.sy,r,0,6.2832); ctx.fill();
+    if(showRing && p.d.skew){
+      ctx.strokeStyle=C.skew; ctx.lineWidth=1.8;
+      ctx.beginPath(); ctx.arc(p.sx,p.sy,r+2.2,0,6.2832); ctx.stroke();
+    }
+  });
+  ctx.globalAlpha=1;
+
+  // ロック時の注釈バナー
+  if(lockT){
+    ctx.font='13px sans-serif';
+    var w1=ctx.measureText(lockT.label).width;
+    ctx.font='11.5px sans-serif';
+    var w2=ctx.measureText(lockT.note).width;
+    var bw=Math.max(w1,w2)+36, bx=CX-bw/2;
+    ctx.fillStyle=C.panel; ctx.globalAlpha=.92;
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(bx,14,bw,52,9) : ctx.rect(bx,14,bw,52);
+    ctx.fill(); ctx.globalAlpha=1;
+    ctx.strokeStyle=C.space; ctx.lineWidth=1; ctx.stroke();
+    ctx.textAlign='center';
+    ctx.fillStyle=C.ink; ctx.font='600 13px sans-serif';
+    ctx.fillText(lockT.label, CX, 35);
+    ctx.fillStyle=C.muted; ctx.font='11.5px sans-serif';
+    ctx.fillText(lockT.note, CX, 54);
+    ctx.textAlign='left';
+  }
+}
+
+// ---- アニメーション ----
+function animateTo(t){
+  animating=true; auto=false;
+  var y0=yaw, p0=pitch, dy=wrapA(t.yaw-y0), dp=t.pitch-p0, T=850, st=performance.now();
+  function fr(now){
+    var u=Math.min(1,(now-st)/T);
+    var e=u<0.5 ? 2*u*u : 1-Math.pow(-2*u+2,2)/2;
+    yaw=y0+dy*e; pitch=p0+dp*e;
+    if(u<1) requestAnimationFrame(fr);
+    else { yaw=t.yaw; pitch=t.pitch; animating=false; }
+  }
+  requestAnimationFrame(fr);
+}
+(function loop(t){ clock=t||0; if(auto && !animating){ yaw+=0.004; } draw(); requestAnimationFrame(loop); })(0);
+
+// ---- 操作 ----
+var dragging=false, px=0, py=0;
+cv.addEventListener('pointerdown',function(e){ if(animating)return; dragging=true; auto=false; px=e.clientX; py=e.clientY; cv.setPointerCapture(e.pointerId); });
+cv.addEventListener('pointermove',function(e){
+  if(!dragging)return;
+  yaw += (e.clientX-px)*0.008;
+  pitch += (e.clientY-py)*0.006;
+  pitch=Math.max(-1.5,Math.min(1.5,pitch));
+  px=e.clientX; py=e.clientY;
+});
+function release(){
+  if(!dragging)return; dragging=false;
+  // 磁石:近い切断面に吸い込む
+  var ts=LESSONS[cur].targets, best=null, bd=0.3;
+  ts.forEach(function(t){ var d=targDist(t); if(d<bd){bd=d; best=t;} });
+  if(best) animateTo(best);
+}
+cv.addEventListener('pointerup',release);
+cv.addEventListener('pointercancel',release);
+
+// ---- 軸セレクタ ----
+['ax','ay','az'].forEach(function(id,ai){
+  var s=document.getElementById(id);
+  KEYS.forEach(function(k){
+    var o=document.createElement('option'); o.value=k; o.textContent=ATTRS[k].name; s.appendChild(o);
+  });
+  s.onchange=function(){ sel[['x','y','z'][ai]]=s.value; setStep(3,true); };
+});
+document.getElementById('ring').onchange=function(e){ showRing=e.target.checked; };
+
+// ---- ステップ制御 ----
+function updateCutProg(){
+  var ts=LESSONS[cur].targets;
+  var el=document.getElementById('cutprog');
+  var gb=document.getElementById('guide');
+  if(ts.length===0){ el.textContent=''; gb.disabled=true; return; }
+  gb.disabled=false;
+  var s='';
+  for(var i=0;i<ts.length;i++){ s+=(i===gIdx?'●':'○'); }
+  el.textContent='切断面 '+s;
+}
+function setStep(i,silent){
+  cur=i; gIdx=-1;
+  for(var j=0;j<4;j++){ document.getElementById('s'+j).classList.toggle('on', j===i); }
+  var L2=LESSONS[i];
+  if(!silent && L2.x){
+    sel={x:L2.x,y:L2.y,z:L2.z};
+    document.getElementById('ax').value=L2.x;
+    document.getElementById('ay').value=L2.y;
+    document.getElementById('az').value=L2.z;
+    showRing=L2.ring;
+    document.getElementById('ring').checked=L2.ring;
+  }
+  document.getElementById('lessonText').innerHTML=L2.txt;
+  updateCutProg();
+}
+document.getElementById('guide').onclick=function(){
+  var ts=LESSONS[cur].targets;
+  if(ts.length===0)return;
+  gIdx=(gIdx+1)%ts.length;
+  animateTo(ts[gIdx]);
+  updateCutProg();
+};
+for(var si=0;si<4;si++){
+  (function(i){ document.getElementById('s'+i).onclick=function(){ auto=(i!==3); setStep(i); }; })(si);
+}
+setStep(0);
+</script>
+</div>
+</body>
+</html>
