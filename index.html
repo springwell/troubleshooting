@@ -169,6 +169,43 @@
   <h2>6. 判断ゲートと停止 — 点まで絞らない</h2>
 
   <p>雲を削る道具は、前章までで揃った。残っているのは、削る手を止める判断だ。調査の各周回には、「次に何を観測するか」とは別に、もうひとつの判断が挟まっている——<strong>もう対応に移ってよいか</strong>。この判断は、毎回同じ二問で下せる。<strong>十分に絞れたか。いま打てる対応の副作用は、許容できるか。</strong>両方Yesなら対応へ移る。どちらかがNoなら、調査を続ける。この二問のゲートが、0章で「手続きは判断が必要な箇所を境界づける」と書いたことの、いちばん具体的な現れだ。判断そのものは消えない。だが、何を問うべきか、いつ問うべきかは、手続きの側が決めてくれる。</p>
+</div>
+
+<div class="wide">
+  <svg viewBox="0 0 720 392" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="判断サイクルの図:観測で候補を削る、二問のゲート、対応を打つ、再観測の循環" style="display:block;width:100%;height:auto">
+    <defs>
+      <marker id="arw" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--muted)"/></marker>
+      <marker id="arw-yes" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--space)"/></marker>
+      <marker id="arw-no" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--faint)"/></marker>
+    </defs>
+    <rect x="60" y="58" width="220" height="64" rx="10" fill="var(--panel)" stroke="var(--line)"/>
+    <text x="170" y="86" text-anchor="middle" font-size="15" font-weight="600" fill="var(--ink)">観測で候補を削る</text>
+    <text x="170" y="108" text-anchor="middle" font-size="12" fill="var(--muted)">副作用の小さい観測から</text>
+    <rect x="440" y="46" width="230" height="88" rx="10" fill="var(--panel)" stroke="var(--line)"/>
+    <text x="555" y="82" text-anchor="middle" font-size="14" font-weight="600" fill="var(--ink)">十分に絞れたか?</text>
+    <text x="555" y="108" text-anchor="middle" font-size="14" font-weight="600" fill="var(--ink)">対応の副作用は許容できるか?</text>
+    <rect x="440" y="258" width="230" height="64" rx="10" fill="var(--panel)" stroke="var(--line)"/>
+    <text x="555" y="286" text-anchor="middle" font-size="15" font-weight="600" fill="var(--ink)">対応を打つ</text>
+    <text x="555" y="308" text-anchor="middle" font-size="12" fill="var(--muted)">切り戻せる手・波及の狭い手から</text>
+    <rect x="60" y="258" width="220" height="64" rx="10" fill="var(--panel)" stroke="var(--line)"/>
+    <text x="170" y="286" text-anchor="middle" font-size="15" font-weight="600" fill="var(--ink)">再観測</text>
+    <text x="170" y="308" text-anchor="middle" font-size="12" fill="var(--muted)">打った手は、本当に効いたか</text>
+    <line x1="280" y1="90" x2="434" y2="90" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#arw)"/>
+    <line x1="555" y1="134" x2="555" y2="252" stroke="var(--space)" stroke-width="1.8" marker-end="url(#arw-yes)"/>
+    <text x="569" y="198" font-size="13" fill="var(--space)">両方Yes</text>
+    <line x1="440" y1="290" x2="286" y2="290" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#arw)"/>
+    <line x1="170" y1="258" x2="170" y2="128" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#arw)"/>
+    <text x="156" y="186" text-anchor="end" font-size="12.5" fill="var(--faint)">効いていなくても、</text>
+    <text x="156" y="204" text-anchor="end" font-size="12.5" fill="var(--faint)">それも観測になる</text>
+    <path d="M 520 46 C 470 8, 255 8, 206 54" fill="none" stroke="var(--faint)" stroke-width="1.5" stroke-dasharray="5 5" marker-end="url(#arw-no)"/>
+    <text x="362" y="22" text-anchor="middle" font-size="12.5" fill="var(--faint)">どちらかNo——調査を続ける</text>
+    <line x1="170" y1="322" x2="170" y2="350" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#arw)"/>
+    <text x="170" y="374" text-anchor="middle" font-size="12.5" fill="var(--muted)">症状が消え、ゴールが満たされたら——終了</text>
+  </svg>
+  <div class="demonote">判断サイクル——ゲートの二問が、調査(左)と対応(右)の境界線になる。</div>
+</div>
+
+<div class="col">
 
   <p>第一問の「十分」は、1点という意味ではない。ここは本稿でいちばん直観に反する主張かもしれない——<strong>候補を1点まで絞りきる必要は、多くの場合ない。対応の一手が、生き残っている候補の全部を覆っていれば、そこで打ってよい。</strong>入門のフレーム2を思い出してほしい。原因がHost 4のどの部品かは、まだ分かっていない。だが「Host 4をローテーションから外す」という一手は、Host 4の中に残った候補の全員にまとめて効く。候補が4つ残っていても、4つ全部がその一手の傘の下にあるなら、短期ゴールに対して調査はもう「十分」だ。この止め方には<strong>満足化</strong>(satisficing)という名前がある。最適な答え——真犯人の1点特定——ではなく、ゴールが満たされる答えで止める。そして、どこまで細かく絞るべきかを決めるのは調査の美学ではなく、2章で宣言したゴールだ。影響を止めるだけなら、粗くてよい。根治まで行くなら、もっと絞る。</p>
 
