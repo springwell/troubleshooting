@@ -92,7 +92,52 @@
 
   <p>いちばん大きく減る瞬間に、画面で起きたことを思い出してほしい。空間のほとんどが一度に暗くなり、一本の列だけが灯って残った。失敗がすべて特定の1台を通っていたと分かった瞬間、ほかのホストは部品ごとまとめて無実になる——ひとつの観測は、容疑者をひとりずつではなく、束で消す。この手触りが、本稿の題に据えた引き算だ。</p>
 
-  <p>以降の本文は、このデモのフレーム番号を参照しながら進む。デモで感じたことに、名前を付けていく——それが本稿の構成だ。</p>
+  <p>いまの2分間には、トラブルシューティングという行為の全体が、ひととおり入っていた。最初に、何が達成されれば終わりなのかを決める段階がある。それから、観測で候補を削り、十分絞れたかを判断し、対応を打ち、効いたかを確かめる——この繰り返しの段階がある。先に、一枚の地図にしておきたい。</p></div>
+
+<div class="wide">
+  <svg viewBox="0 0 720 322" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="トラブルシューティングの全体像:まず決める段階(ゴールを決める、2章)と、あとは繰り返す段階(観測・判断・対応・再観測、3〜6章)、終了と打ち切りの出口" style="display:block;width:100%;height:auto">
+    <defs>
+      <marker id="arw2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--muted)"/></marker>
+      <marker id="arw2-yes" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--space)"/></marker>
+      <marker id="arw2-no" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--faint)"/></marker>
+    </defs>
+    <text x="105" y="32" text-anchor="middle" font-size="12.5" fill="var(--faint)" letter-spacing="0.15em">まず決める</text>
+    <text x="457" y="32" text-anchor="middle" font-size="12.5" fill="var(--faint)" letter-spacing="0.15em">あとは繰り返す</text>
+    <rect x="215" y="50" width="485" height="230" rx="14" fill="none" stroke="var(--line)" stroke-dasharray="4 6"/>
+    <rect x="30" y="70" width="150" height="70" rx="10" fill="var(--panel)" stroke="var(--line)"/>
+    <text x="105" y="98" text-anchor="middle" font-size="14.5" font-weight="600" fill="var(--ink)">ゴールを決める</text>
+    <text x="105" y="118" text-anchor="middle" font-size="11" fill="var(--faint)">2章</text>
+    <rect x="245" y="75" width="180" height="56" rx="10" fill="var(--panel)" stroke="var(--line)"/>
+    <text x="335" y="98" text-anchor="middle" font-size="13.5" font-weight="600" fill="var(--ink)">観測で候補を削る</text>
+    <text x="335" y="118" text-anchor="middle" font-size="11" fill="var(--faint)">3〜5章</text>
+    <rect x="475" y="65" width="200" height="76" rx="10" fill="var(--panel)" stroke="var(--line)"/>
+    <text x="575" y="90" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)">十分に絞れたか?</text>
+    <text x="575" y="110" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)">副作用は許容できるか?</text>
+    <text x="575" y="130" text-anchor="middle" font-size="11" fill="var(--faint)">6章</text>
+    <rect x="475" y="185" width="200" height="56" rx="10" fill="var(--panel)" stroke="var(--line)"/>
+    <text x="575" y="208" text-anchor="middle" font-size="13.5" font-weight="600" fill="var(--ink)">対応を打つ</text>
+    <text x="575" y="228" text-anchor="middle" font-size="11" fill="var(--faint)">6章</text>
+    <rect x="245" y="185" width="180" height="56" rx="10" fill="var(--panel)" stroke="var(--line)"/>
+    <text x="335" y="208" text-anchor="middle" font-size="13.5" font-weight="600" fill="var(--ink)">再観測</text>
+    <text x="335" y="228" text-anchor="middle" font-size="11" fill="var(--faint)">6章</text>
+    <line x1="180" y1="105" x2="239" y2="105" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#arw2)"/>
+    <line x1="425" y1="101" x2="469" y2="101" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#arw2)"/>
+    <line x1="575" y1="141" x2="575" y2="179" stroke="var(--space)" stroke-width="1.8" marker-end="url(#arw2-yes)"/>
+    <text x="587" y="164" font-size="11.5" fill="var(--space)">両方Yes</text>
+    <line x1="475" y1="213" x2="431" y2="213" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#arw2)"/>
+    <line x1="335" y1="185" x2="335" y2="137" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#arw2)"/>
+    <line x1="335" y1="241" x2="335" y2="296" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#arw2)"/>
+    <text x="335" y="314" text-anchor="middle" font-size="12" fill="var(--muted)">ゴールが満たされたら、終了</text>
+    <line x1="245" y1="213" x2="152" y2="213" stroke="var(--faint)" stroke-width="1.5" stroke-dasharray="5 5" marker-end="url(#arw2-no)"/>
+    <text x="137" y="238" text-anchor="middle" font-size="11.5" fill="var(--faint)">最初に引いた線で打ち切る</text>
+    <text x="137" y="256" text-anchor="middle" font-size="11" fill="var(--faint)">(2章・7章)</text>
+  </svg>
+  <div class="demonote">トラブルシューティングの全体像——まず決める段階、あとは繰り返す段階。判断の中身は、6章の図で拡大する。</div>
+</div>
+
+<div class="col">
+
+  <p>本稿の章立ては、この地図をなぞって進む。ゴールの決め方が2章。候補の削り方——容疑者の数え方、挟み撃ち、消してよい根拠——が3章から5章。判断と対応が6章で、繰り返しの外側にあるもの、打ち切りや次の障害への学びが7章だ。以降の本文は、このデモのフレーム番号を参照しながら、デモで感じたことに名前を付けていく——それが本稿の構成だ。</p>
 
   <h2>2. ゴールを最初に決める — 目的が手続きを決める</h2>
 
