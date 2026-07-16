@@ -41,9 +41,26 @@
 
   .tobecontinued{margin-top:72px; padding-top:28px; border-top:1px solid var(--line);
     color:var(--faint); font-size:14px}
+
+  html{scroll-behavior:smooth}
+  h2{scroll-margin-top:28px}
+  .epigraph .jp{display:block; margin-top:10px; font-style:normal;
+    font-family:"Hiragino Sans","Noto Sans JP",-apple-system,sans-serif;
+    font-size:13.5px; color:var(--faint)}
+  #progress{position:fixed; top:0; left:0; height:2px; width:0;
+    background:var(--space); z-index:10}
+  .toc{position:fixed; top:76px; left:22px; width:200px; display:none; z-index:5}
+  @media(min-width:1200px){ .toc{display:block} }
+  .toc a{display:block; color:var(--faint); text-decoration:none; font-size:12px;
+    line-height:1.55; padding:4px 12px; border-left:2px solid var(--line)}
+  .toc a.on{color:var(--ink); border-left-color:var(--space)}
+  .toc a:hover{color:var(--muted)}
+  .footer{margin-top:72px; padding-top:24px; border-top:1px solid var(--line);
+    color:var(--faint); font-size:12.5px; text-align:center; letter-spacing:.08em}
 </style>
 </head>
 <body>
+<div id="progress"></div>
 
 <div class="col">
   <div class="series">連載・第1部(草稿プレビュー)</div>
@@ -52,6 +69,7 @@
 
   <div class="epigraph">
     When you have eliminated the impossible, whatever remains, however improbable, must be the truth.
+    <span class="jp">ありえないものをすべて消去して、あとに残ったものが——どれほどありそうになくても——真実にちがいない。</span>
     <span class="attr">— Sherlock Holmes, in Arthur Conan Doyle, <i>The Sign of the Four</i> (1890)</span>
   </div>
 
@@ -342,7 +360,37 @@
   <p>答えは能力の差ではなく、切実さの差だと思う。医療・航空・原子力では失敗が人命に直結し、実験もやり直しも許されない。だから彼らは、暗黙知を手続きへ変換することを歴史的に強制されてきた。一方ソフトウェアの多くの領域では、失敗が取り返しのつくものだった——再起動すれば直り、リリースし直せば済んだ。暗黙知を手続きへ変換することを強いるだけの圧力が、環境の側になかったのだ。だがその前提は変わりつつある。ひとつの障害が数千のテナントに波及し、決済や医療や交通がその上で動く規模では、失敗は取り返しがつく、とはもう言えない。手続き化を強いられてきた側に、われわれも片足を踏み入れつつある。</p>
 
   <p>もうひとつ、事情がある。手続き化には対象の安定が要るが、われわれの足元は、メインフレームからクラウド、コンテナ、サーバーレスまで、キャリア一回分の時間に何度も組み変わってきた。言語化した「よくある原因」のリストは、次のパラダイムで無効になる。だから知識は文書ではなく、個人の適応力——センス——の形を取るしかなかった。変わり続けてきたのが中身であって形式ではないこと——0章に置いた賭けは、この観察に立っている。</p>
+
+  <div class="footer">© 2026 Yusaku SAWAI</div>
 </div>
 
+<script>
+(function(){
+  var hs=[].slice.call(document.querySelectorAll('h2'));
+  var toc=document.createElement('nav'); toc.className='toc'; toc.setAttribute('aria-label','目次');
+  var links=hs.map(function(h,i){
+    h.id='sec'+i;
+    var a=document.createElement('a');
+    a.href='#sec'+i;
+    a.textContent=h.textContent.split(' — ')[0];
+    toc.appendChild(a);
+    return a;
+  });
+  document.body.appendChild(toc);
+  var bar=document.getElementById('progress');
+  function upd(){
+    var d=document.documentElement;
+    var max=d.scrollHeight-window.innerHeight;
+    var sc=window.pageYOffset||d.scrollTop||0;
+    bar.style.width=(max>0?sc/max*100:0)+'%';
+    var cur=0;
+    hs.forEach(function(h,i){ if(h.getBoundingClientRect().top<=100) cur=i; });
+    links.forEach(function(a,i){ a.className=(i===cur)?'on':''; });
+  }
+  window.addEventListener('scroll',upd,{passive:true});
+  window.addEventListener('resize',upd);
+  upd();
+})();
+</script>
 </body>
 </html>
