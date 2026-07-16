@@ -9,6 +9,7 @@ const EXPECTED = {
   case_: [120,96,8,2,1,1],
   hard:  [120,80,80,56,56,24,24,12,5,5,5],
   loop:  [120,120,108,102,66,102,66,60,60,60],
+  sum:   [120,120,120,120,120,120,52,52],
 };
 
 const html = fs.readFileSync(path,'utf8');
@@ -22,11 +23,11 @@ const dataJs = js.slice(0,dataEnd)
   .replace(/function setLang[\s\S]*?applyFrame\(false\);\n}/,'');
 const sandbox = {Math, console, performance:{now:()=>0}, out:{}};
 require('vm').runInNewContext(dataJs + `
-out.counts=[0,1,2,3].map(i=>frameCounts(i));
-out.sync=[0,1,2,3].every(i=>ENT[i].length===SCN[i].frames.length);
+out.counts=[0,1,2,3,4].map(i=>frameCounts(i));
+out.sync=[0,1,2,3,4].every(i=>ENT[i].length===SCN[i].frames.length);
 out.labels=SCN.map(s=>s.causeLabel);
 `, sandbox);
-const names = ['intro','case_','hard','loop'];
+const names = ['intro','case_','hard','loop','sum'];
 let ok = true;
 names.forEach((n,i)=>{
   const got = sandbox.out.counts[i].join(',');

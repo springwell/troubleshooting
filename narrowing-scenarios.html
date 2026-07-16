@@ -68,6 +68,7 @@
     <button class="tab" id="t1">Case: only writes fail</button>
     <button class="tab" id="t2">Hard case: intermittent stalls</button>
     <button class="tab" id="t3">Another kind: you fix it, it comes back</button>
+    <button class="tab" id="t4">Yet another kind: slowly getting slower</button>
     <button class="tab" id="langbtn" style="margin-left:auto">EN</button>
   </div>
 
@@ -104,16 +105,20 @@ var TR={
  '14:00のイベントへの近さ':'Near the 14:00 event?','遠い':'Far','近い':'Near',
  '転送リトライ':'Proxy retry','アプリ(飽和)':'App (saturated)','プール・キュー':'Pool & queue','タイムアウト':'Timeout',
  '維持ループ':'Sustaining loop','切断済み':'Cut','Node 7のディスク水位超過':'Disk watermark breached (Node 7)',
- '定型確認の範囲':'Routine checks','範囲内':'Covered','範囲外':'Not covered','Host 4の時刻ズレ':'Clock skew (Host 4)','エージェント v2.3':'Agent v2.3'
+ '定型確認の範囲':'Routine checks','範囲内':'Covered','範囲外':'Not covered','Host 4の時刻ズレ':'Clock skew (Host 4)','エージェント v2.3':'Agent v2.3',
+ '変更履歴との相関':'Correlation with changes','なし':'None','あり':'Yes',
+ 'この半年の変更':'Changes in the last 6 months','(変更なし)':'(no change)','N+1クエリ':'N+1 query',
+ 'ログ同期化':'Sync logging','TLS段+1':'Extra TLS hop','データ増':'Data growth','LB設定':'LB config',
+ '総和(単独犯なし)':'The sum (no single culprit)'
 };
 function tr(x){ return (lang==='en' && TR[x]) ? TR[x] : x; }
 var UI={
  ja:{h1:'引き算のトラブルシューティング', sub:'点は容疑者(原因の候補)。不可能を消していけば、残ったものが真実になる',
-   t0:'入門:ログインだけが失敗する', t1:'事例:書き込みだけが失敗する', t2:'難しい事例:間欠的に応答が詰まる', t3:'別の類型:直しても、戻ってくる',
+   t0:'入門:ログインだけが失敗する', t1:'事例:書き込みだけが失敗する', t2:'難しい事例:間欠的に応答が詰まる', t3:'別の類型:直しても、戻ってくる', t4:'もうひとつの類型:じわじわ遅くなる',
    cnt:'残り候補', hint:'ドラッグで自由回転 / フレーム送りで切断面へ自動移動',
    h4a:'調査 — この段階でやったこと', h4s:'状態 — 削れた候補と選択肢', prev:'戻る', next:'次へ', btn:'EN'},
  en:{h1:'Debugging by Elimination', sub:'Whatever remains, however improbable — each dot is a suspect, and every observation extinguishes the innocent.',
-   t0:'Intro: only logins fail', t1:'Case: only writes fail', t2:'Hard case: intermittent stalls', t3:'Another kind: you fix it, it comes back',
+   t0:'Intro: only logins fail', t1:'Case: only writes fail', t2:'Hard case: intermittent stalls', t3:'Another kind: you fix it, it comes back', t4:'Yet another kind: slowly getting slower',
    cnt:'Suspects left', hint:'Drag to rotate freely / stepping frames auto-moves to the informative angle',
    h4a:'Investigation — what was done', h4s:'State — what got eliminated, and the options', prev:'Back', next:'Next', btn:'日本語'}
 };
@@ -224,6 +229,32 @@ var ENT=[
   {t:"<b>9. Fix and re-observe</b> — make the ring harder to form",
    act:"Short-term: keep retries suppressed, lift gradually. Long-term: retry <b>budgets and jitter (backoff)</b>, a circuit breaker that trips on repeated failures, and moving the backup window.",
    state:"Stability confirmed — done.<div class='opt'><em>Lessons</em>: 'When everything goes abnormal at once, hunt the <b>amplifier</b>, not a culprit.' 'If it returns after fixing, suspect the <b>structure</b>, not a part.'</div>"}
+ ],
+ [
+  {t:"<b>0. Verify the report</b> — not a single spike",
+   act:"Verify 'the API is slowly getting slower': p99 (the slowest 1%) has <b>doubled over six months</b>. Zoom in anywhere on the chart — <b>there is no step, no spike, not one bad day</b>. Just a little worse every week. Candidates = shared infra + 12 hosts × 8 parts = <b>120 dots</b>.",
+   state:"Candidates: everything.<div class='opt'><em>Goals</em>: short-term = stop it getting worse / long-term = name the increase.</div>"},
+  {t:"<b>1. Try cutting by time</b> — no change lines up",
+   act:"The usual first stroke: 'since when?'. Overlay the deploy history — <b>no step after any deploy</b>. There is nothing to roll back at, because nothing ever jumped. The change-history axis <b>does not cut</b>.",
+   state:"<b>Zero extinguished</b>. The axis that opened every previous case passes straight through this one."},
+  {t:"<b>2. Try cutting by space</b> — every host is equally slow",
+   act:"Next stroke: 'where?'. Split by host and by service — <b>every host is getting slower at the same slope</b>. No machine and no part stands out.",
+   state:"<b>Zero extinguished</b>. The spatial comparison passes through too. Both blades of the pincer just cut air."},
+  {t:"<b>3. Check what should just work</b> — all 'within normal range'",
+   act:"The routine healthy-side checks: time sync, name resolution (dig), reachability (curl), resource limits, the invisible ceilings — <b>all within normal range</b>. No suspect can be charged on its own.",
+   state:"<b>Zero extinguished, three times in a row</b>. The procedure is telling you something: when repeated observation eliminates no one, that is not failure — it is <b>a signal</b>. The question 'which one?' does not fit this problem."},
+  {t:"<b>4. Turn the question inside out</b> — everyone is a little guilty",
+   act:"Every individual value is within range, yet <b>only the total is abnormal</b>. So there is no culprit missing — <b>everyone is guilty of a few milliseconds</b>. Switch off the single-culprit spotlight, and light everyone dimly instead.",
+   state:"The count has not gone down. <b>The not-going-down is itself the answer's shape</b>: this problem does not converge to a point. It is <b>a problem of the sum</b>."},
+  {t:"<b>5. Recount</b> — the suspect is not a part but a change",
+   act:"Change what counts as a suspect: 'the cause is <b>one of the changes of the last six months (plus natural growth)</b>'. List half a year of deploys, config edits and data-volume drift, and regroup the parts by change.",
+   state:"Rotate the axis and the dots regroup into columns, one per change. The counting rule chosen in the article can <b>always be re-chosen</b> — the same move as rotating to the version axis in the hard case."},
+  {t:"<b>6. Measure the contributions</b> — there are leaders; there is no culprit",
+   act:"Measure each change's increment (span diffs in traces, before/after comparisons): one new N+1 query <b>+4ms</b>, logging switched to synchronous writes <b>+3ms</b>, one extra TLS hop <b>+2ms</b>, data growth pushing the index one level deeper <b>+5ms</b>, an LB config change <b>+2ms</b>… <b>Parts tied to no change measure zero and go dark.</b>",
+   state:"<b>68 candidates go dark; 52 remain</b> — and every one of the 52 is 'a few milliseconds guilty'. <b>No amount of narrowing converges to one point.</b> Fix any single one, and all the others remain."},
+  {t:"<b>7. Redraw the goal</b> — from manhunt to collecting a budget",
+   act:"'Fix the culprit' cannot be the goal here. Redraw it as a <b>latency budget</b>: give each segment an allowance, then collect the overages largest-first — kill the N+1 (−4ms), make logging asynchronous again (−3ms), rebuild the index (−5ms). Every change was correct on its own — <b>and the budget still gets collected</b>.",
+   state:"After collection, p99 is back under the budget line.<div class='opt'><em>Lessons for next time</em>: 'When observation keeps eliminating no one, question the problem's type.' 'For creeping slowness, think in <b>balance-sheet</b> terms — no one is over; the sum is over.'</div>"}
  ]
 ];
 function setLang(l){
@@ -236,6 +267,7 @@ function setLang(l){
   document.getElementById('t1').textContent=u.t1;
   document.getElementById('t2').textContent=u.t2;
   document.getElementById('t3').textContent=u.t3;
+  document.getElementById('t4').textContent=u.t4;
   document.getElementById('cntpre').textContent=u.cnt;
   document.getElementById('hint').textContent=u.hint;
   document.getElementById('h4act').textContent=u.h4a;
@@ -507,7 +539,68 @@ function buildLoop(){
     ringLabels:{'リトライ':'転送リトライ','LB':'LB','アプリ':'アプリ(飽和)','プール':'プール・キュー','DB':'DB','タイムアウト':'タイムアウト'}};
 }
 
-var SCN=[buildIntro(), buildSimple(), buildHard(), buildLoop()];
+
+// ============ シナリオ4:総和(じわじわ遅くなる) ============
+function buildSum(){
+  var S=[], comps=['アプリ','ランタイム','OS','ネットワーク','構成','FS','装置','時刻同期'];
+  var chgOf={'アプリ':'N+1クエリ','構成':'ログ同期化','ネットワーク':'TLS段+1','FS':'データ増'};
+  ['LB','DNS','認証','設定配布','監視','時刻源'].forEach(function(k){
+    for(var r=0;r<4;r++) S.push({name:k+'-'+(r+1), place:'共有', comp:'共有基盤',
+      chg:(k==='LB')?'LB設定':null});
+  });
+  for(var h=1;h<=12;h++) comps.forEach(function(c){
+    S.push({name:'Host '+h+'/'+c, place:'Host '+h, comp:c, chg:chgOf[c]||null});
+  });
+  var Yl=['共有基盤'].concat(comps);
+  var Xl=['共有']; for(var h2=1;h2<=12;h2++) Xl.push('Host '+h2);
+  var CH=['(変更なし)','N+1クエリ','ログ同期化','TLS段+1','データ増','LB設定'];
+  var axesA=[
+    {name:'場所', levels:Xl, tick:[0,1,6,12], get:function(s){return Xl.indexOf(s.place);}},
+    {name:'構成要素', levels:Yl, tick:'all', get:function(s){return Yl.indexOf(s.comp);}},
+    {name:'変更履歴との相関', levels:['なし','あり'], tick:'all', get:function(s){return 0;}}
+  ];
+  var axesB=[axesA[0], axesA[1],
+    {name:'この半年の変更', levels:CH, tick:'all',
+     get:function(s){var i=CH.indexOf(s.chg||'(変更なし)'); return i<0?0:i;}}
+  ];
+  var frames=[
+   {cut:null, cam:{yaw:0.7,pitch:0.4}, axes:axesA, reveal:false,
+    t:"<b>0. 報告の検証</b> — 跳ねた日が、ない",
+    act:"「APIがじわじわ遅くなっている」を検証。p99(遅いほうの1%の応答時間)は<b>半年で2倍</b>。ただしグラフをどこまで拡大しても、<b>段差も跳ねも、悪かった一日もない</b>——毎週すこしずつ悪い。原因候補=共有基盤+12ホスト×8部品の<b>120点</b>。",
+    state:"候補:全域。<div class='opt'><em>ゴール</em>:短期=これ以上の悪化を止める/長期=増分の言語化。</div>"},
+   {cut:null, cam:{yaw:1.35,pitch:0.15}, axes:axesA, reveal:false,
+    t:"<b>1. 時間で切ろうとする</b> — どの変更も跳ねていない",
+    act:"いつもの最初のひと太刀:「いつから?」。デプロイ履歴と重ねる——<b>どのデプロイの直後にも段差がない</b>。跳ねがないので、ロールバックで確かめる当て先すらない。変更履歴という軸が、<b>切れない</b>。",
+    state:"<b>消灯ゼロ</b>。今までのどの事例でも最初に効いた軸が、今回は素通りする。"},
+   {cut:null, cam:{yaw:0.05,pitch:0.22}, axes:axesA, reveal:false,
+    t:"<b>2. 空間で切ろうとする</b> — どのホストも、同じだけ遅い",
+    act:"次のひと太刀:「どこが?」。ホスト別・サービス別に分けて描く——<b>全ホストが同じ傾きで遅くなっている</b>。突出した1台も、突出した部品もない。",
+    state:"<b>消灯ゼロ</b>。空間比較も素通り。挟み撃ちの両刃が、二本とも空を切った。"},
+   {cut:null, cam:{yaw:1.05,pitch:0.12}, axes:axesA, reveal:false,
+    t:"<b>3. 動いていて当然のものを確かめる</b> — 全部「正常範囲内」",
+    act:"正常側の定型確認:時刻同期、名前解決(dig)、依存先への疎通(curl)、資源の上限、見えない天井——<b>全て正常範囲内</b>。どの容疑者も、単体では嫌疑をかけられない。",
+    state:"<b>消灯ゼロ、3連続</b>。ここで手続きが教えてくれる:観測を重ねても誰も消えないのは、失敗ではなく<b>シグナル</b>だ——「どれか」という問いの形が、この問題に合っていない。"},
+   {cut:null, dim:true, cam:{yaw:0.7,pitch:0.4}, axes:axesA, reveal:false,
+    t:"<b>4. 問いを裏返す</b> — 全員が、少しずつ黒い",
+    act:"個々の値はどれも正常範囲内。なのに<b>合計だけが異常</b>。つまり犯人が見つからないのではなく——<b>全員が数ミリ秒ずつ犯人</b>なのだ。単独犯を探す照明を消して、全員をうっすら灯し直す。",
+    state:"候補は減っていない。<b>減らないこと自体が、答えの形を教えている</b>:これは点に収束する問題ではなく、<b>総和の問題</b>だ。"},
+   {cut:null, dim:true, cam:{yaw:1.35,pitch:0.15}, axes:axesB, reveal:false,
+    t:"<b>5. 数え直す</b> — 容疑者は「部品」ではなく「変更」",
+    act:"容疑者の数え方を変える:「原因は、<b>この半年に入ったどの変更(と自然な増分)か</b>」。半年分のデプロイ・設定変更・データ量の推移を一覧にして、部品を変更ごとに並べ直す。",
+    state:"軸を回すと、点が変更ごとの列に集まり直す。数え方は<b>いつでも決め直していい</b>——難しい事例で版の軸に回したのと、同じ手だ。"},
+   {cut:function(s){return !s.chg;}, dim:true, cam:{yaw:1.35,pitch:0.15}, axes:axesB, reveal:false,
+    t:"<b>6. 寄与を測る</b> — 上位はある。単独犯はいない",
+    act:"変更ごとに増分を測る(トレースの区間差分・前後比較):N+1クエリが1本<b>+4ms</b>、ログの同期書き込み化<b>+3ms</b>、TLSの段が1つ増えて<b>+2ms</b>、データ増でインデックスが1段深く<b>+5ms</b>、LBの設定変更<b>+2ms</b>……。<b>どの変更にも紐づかない部品は、寄与ゼロとして消灯</b>。",
+    state:"<b>68候補が消灯、残り52</b>——ただし、残った52はどれも「数msずつ黒い」。<b>いくら絞っても、1点には収束しない</b>。どの1つを直しても、他の全部が残る。"},
+   {cut:null, dim:true, cam:{yaw:0.5,pitch:0.38}, axes:axesB, reveal:false,
+    t:"<b>7. ゴールを引き直す</b> — 犯人捜しから、予算の回収へ",
+    act:"「犯人を直す」は、この類型ではゴールにならない。ゴールを<b>性能予算</b>に引き直す:区間ごとに「ここまで許す」を配り、超過分を大きい順に回収する——N+1を潰す(-4ms)、ログを非同期に戻す(-3ms)、インデックスを張り直す(-5ms)。一つひとつは正しかった変更でも、<b>予算は取り立てられる</b>。",
+    state:"回収後、p99は予算線の下へ。<div class='opt'><em>次回への学び</em>:「観測を重ねても誰も消えないなら、類型を疑う」「じわじわ型は、犯人ではなく<b>収支</b>で考える——一人の超過ではなく、全員の合計が超過している」。</div>"}
+  ];
+  return {suspects:S, frames:frames, causeSet:{}, causeLabel:'総和(単独犯なし)'};
+}
+
+var SCN=[buildIntro(), buildSimple(), buildHard(), buildLoop(), buildSum()];
 SCN.forEach(function(sc){
   var alive=sc.suspects.map(function(){return true;});
   sc.aliveByFrame=sc.frames.map(function(f){
@@ -549,7 +642,7 @@ function applyFrame(snap){
       }
     }
     posT[i]=t;
-    alphaT[i]=sc.aliveByFrame[fi][i]?1:0.06;
+    alphaT[i]=sc.aliveByFrame[fi][i]?(f.dim?0.3:1):0.06;
     if(snap){ pos[i]={x:t.x,y:t.y,z:t.z}; alpha[i]=alphaT[i]; }
   });
   camAnim={y0:yaw,p0:pitch,y1:f.cam.yaw,p1:f.cam.pitch,st:performance.now(),T:900};
@@ -619,7 +712,8 @@ function draw(){
       return;
     }
     var isCause=(f.reveal && sc.causeSet[p.s.name]);
-    var r=(2.8+3.2*t)*(a>0.5?1:0.7);
+    var dimAlive=(f.dim && sc.aliveByFrame[fi][p.i]);
+    var r=(2.8+3.2*t)*((a>0.5||dimAlive)?1:0.7);
     if(isCause){
       ctx.globalAlpha=0.2+0.25*pulse;
       ctx.fillStyle=C.crash;
@@ -627,7 +721,7 @@ function draw(){
       frontCause=p;
     }
     ctx.globalAlpha=a*(0.5+0.5*t);
-    ctx.fillStyle=isCause?C.crash:(a>0.5?C.space:C.dead);
+    ctx.fillStyle=isCause?C.crash:((a>0.5||dimAlive)?C.space:C.dead);
     ctx.beginPath(); ctx.arc(p.sx,p.sy,r,0,6.2832); ctx.fill();
   });
   ctx.globalAlpha=1;
@@ -735,13 +829,14 @@ document.addEventListener('keydown',function(e){
 });
 function setScn(i){
   scn=i; fi=0;
-  for(var k=0;k<4;k++) document.getElementById('t'+k).classList.toggle('on',i===k);
+  for(var k=0;k<5;k++) document.getElementById('t'+k).classList.toggle('on',i===k);
   initPositions();
 }
 document.getElementById('t0').onclick=function(){setScn(0);};
 document.getElementById('t1').onclick=function(){setScn(1);};
 document.getElementById('t2').onclick=function(){setScn(2);};
 document.getElementById('t3').onclick=function(){setScn(3);};
+document.getElementById('t4').onclick=function(){setScn(4);};
 document.getElementById('langbtn').onclick=function(){setLang(lang==='ja'?'en':'ja');};
 setScn(0);
 setLang('en');
@@ -751,7 +846,7 @@ setLang('en');
     document.getElementById('h1').style.display='none';
     document.getElementById('sub').style.display='none';
   }
-  var m=/[?&]scn=([0-3])/.exec(q); if(m) setScn(+m[1]);
+  var m=/[?&]scn=([0-4])/.exec(q); if(m) setScn(+m[1]);
   var l=/[?&]lang=(ja|en)/.exec(q); if(l) setLang(l[1]);
 })();
 requestAnimationFrame(loop);
