@@ -65,9 +65,63 @@
 
   <p>先に本稿の主張を正確に述べておく。<strong>トラブルシューティングは手続き化できる。ただし手続きは、判断を不要にするのではなく、判断が必要な箇所を境界づける。</strong>時代とともに変わり続けてきたのは「何がよく壊れるか」という中身であって、「どう絞り込むか」という形式ではない——手続き化できるのは、この持ち越せる形式のほうだ。手続きが保証するのは網羅性(候補を取りこぼさないこと)と安全性(取り返しのつかない操作をうっかり踏まないこと)であって、速度ではない。速度は依然として熟達に宿る。だがその熟達の中身も、本稿を読み終える頃には「どの順番で調べるかの目利き」という、ずっと小さく明確なものに絞り込まれているはずだ。そしてもうひとつ。この手続きは、仮説を前提にしない。仮説がまだ立てられない日でも、調査は始められる——<strong>仮説は速度の道具であって、入場券ではない</strong>。このことの意味は、5章でもう一度確かめる。</p>
 
-  <p>もう一つ、この主張の射程も先に引いておく。単一の原因がある問題は、手続きで原因まで行き着ける。複数の条件が重なって起きる問題も行き着ける。原因が一点ではなく構造(自分で自分を悪化させるループ)である問題は——行き着けるが、行き着く先が点ではない。行き着けないのは、宇宙線によるビット反転のような、証拠が原理的に残らない事象だけだ。この区別は第3部で正面から扱う。</p>
+  <p>もう一つ、この主張の射程も先に引いておく。問題は、消去が行き着く先の形で分けられる。単一の原因がある問題は、一つの点に行き着く。複数の条件が重なって初めて起きる問題は、条件の組に行き着く。原因が一点ではなく構造——自分で自分を悪化させるループ——である問題は、行き着く先が点ではなく輪になる。そして、犯人がひとりもいない問題もある。多数の小さな寄与が積み重なって、全体がジリジリと重くなっていく類——総和の問題だ。本稿の手続きがそのまま原因まで運んでくれるのは前の二つで、輪と総和は第3部で正面から扱う。どの形にも行き着けないのは、宇宙線によるビット反転のような、証拠が原理的に残らない事象だけだ。</p></div>
 
-  <p>なお本稿は、複数人での並行調査(インシデントコマンドの領域)、顧客や関係者とのコミュニケーション設計を意図的に扱わない。いずれも重要だが、まず一人のエンジニアの頭の中の手続きを固めるのが先だと考えるからだ。</p>
+<div class="wide">
+  <svg viewBox="0 0 720 252" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="問題の四類型:点(犯人はひとり)、条件の交差(重なると起きる)、輪(直しても戻ってくる)、総和(犯人がひとりもいない)。前の二つは本稿の手続きで行き着け、後の二つは第3部で扱う" style="display:block;width:100%;height:auto">
+    <defs>
+      <marker id="arw3" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" fill="var(--space)"/></marker>
+    </defs>
+    <circle cx="75" cy="58" r="3.5" fill="var(--line)"/>
+    <circle cx="75" cy="80" r="3.5" fill="var(--line)"/>
+    <circle cx="75" cy="102" r="3.5" fill="var(--line)"/>
+    <circle cx="97" cy="58" r="3.5" fill="var(--line)"/>
+    <circle cx="97" cy="102" r="3.5" fill="var(--line)"/>
+    <circle cx="119" cy="58" r="3.5" fill="var(--line)"/>
+    <circle cx="119" cy="80" r="3.5" fill="var(--line)"/>
+    <circle cx="119" cy="102" r="3.5" fill="var(--line)"/>
+    <circle cx="97" cy="80" r="5" fill="var(--space)"/>
+    <circle cx="259" cy="80" r="30" fill="none" stroke="var(--line)"/>
+    <circle cx="287" cy="80" r="30" fill="none" stroke="var(--line)"/>
+    <circle cx="273" cy="80" r="5" fill="var(--space)"/>
+    <circle cx="449.0" cy="52.0" r="3.5" fill="var(--line)"/>
+    <circle cx="475.6" cy="71.3" r="3.5" fill="var(--line)"/>
+    <circle cx="465.5" cy="102.7" r="3.5" fill="var(--line)"/>
+    <circle cx="432.5" cy="102.7" r="3.5" fill="var(--line)"/>
+    <circle cx="422.4" cy="71.3" r="3.5" fill="var(--line)"/>
+    <path d="M 449 42 A 38 38 0 1 1 440 43.1" fill="none" stroke="var(--space)" stroke-width="1.5" marker-end="url(#arw3)"/>
+    <circle cx="598" cy="62" r="3.5" fill="var(--space)" fill-opacity="0.33"/>
+    <circle cx="598" cy="80" r="3.5" fill="var(--space)" fill-opacity="0.33"/>
+    <circle cx="598" cy="98" r="3.5" fill="var(--space)" fill-opacity="0.33"/>
+    <circle cx="616" cy="62" r="3.5" fill="var(--space)" fill-opacity="0.33"/>
+    <circle cx="616" cy="80" r="3.5" fill="var(--space)" fill-opacity="0.33"/>
+    <circle cx="616" cy="98" r="3.5" fill="var(--space)" fill-opacity="0.33"/>
+    <circle cx="634" cy="62" r="3.5" fill="var(--space)" fill-opacity="0.33"/>
+    <circle cx="634" cy="80" r="3.5" fill="var(--space)" fill-opacity="0.33"/>
+    <circle cx="634" cy="98" r="3.5" fill="var(--space)" fill-opacity="0.33"/>
+    <circle cx="652" cy="62" r="3.5" fill="var(--space)" fill-opacity="0.33"/>
+    <circle cx="652" cy="80" r="3.5" fill="var(--space)" fill-opacity="0.33"/>
+    <circle cx="652" cy="98" r="3.5" fill="var(--space)" fill-opacity="0.33"/>
+    <text x="97" y="168" text-anchor="middle" font-size="14" font-weight="600" fill="var(--ink)">点</text>
+    <text x="97" y="190" text-anchor="middle" font-size="11.5" fill="var(--muted)">犯人はひとり</text>
+    <text x="273" y="168" text-anchor="middle" font-size="14" font-weight="600" fill="var(--ink)">条件の交差</text>
+    <text x="273" y="190" text-anchor="middle" font-size="11.5" fill="var(--muted)">重なると、起きる</text>
+    <text x="449" y="168" text-anchor="middle" font-size="14" font-weight="600" fill="var(--ink)">輪</text>
+    <text x="449" y="190" text-anchor="middle" font-size="11.5" fill="var(--muted)">直しても、戻ってくる</text>
+    <text x="625" y="168" text-anchor="middle" font-size="14" font-weight="600" fill="var(--ink)">総和</text>
+    <text x="625" y="190" text-anchor="middle" font-size="11.5" fill="var(--muted)">犯人が、ひとりもいない</text>
+    <line x1="30" y1="212" x2="340" y2="212" stroke="var(--line)"/>
+    <line x1="382" y1="212" x2="692" y2="212" stroke="var(--line)"/>
+    <text x="185" y="236" text-anchor="middle" font-size="11.5" fill="var(--faint)">本稿の手続きで行き着ける</text>
+    <text x="537" y="236" text-anchor="middle" font-size="11.5" fill="var(--faint)">第3部で扱う</text>
+  </svg>
+  <div class="demonote">消去が行き着く先の形による、問題の四類型。このほかに「報告そのものが誤っている」「調査中に系が変わり続ける」という状況があり、これらも第3部で扱う。</div>
+</div>
+
+<div class="col">
+
+
+    <p>なお本稿は、複数人での並行調査(インシデントコマンドの領域)と、顧客や関係者とのコミュニケーション設計を意図的に扱わない。いずれも重要だが、まず一人のエンジニアの頭の中の手続きを固めるのが先だと考えるからだ。もうひとつ、攻撃者が証拠を消しにくる種類の調査(セキュリティ侵害のフォレンジック)も扱わない。本稿の消去は、観測が意図的には欺かれないことを前提にしており、欺いてくる相手を追う手続きは、それ自体が別の体系だからだ。</p>
 
   <p>誰に向けて書いているかも、先に述べておく。障害対応を前に「自分にはセンスがない」と立ち尽くしたことのある人と、教える側に回って「これはセンスとしか言いようがない」と諦めかけたことのある人——その両方だ。</p>
 
