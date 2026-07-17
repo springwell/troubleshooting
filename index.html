@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>引き算のトラブルシューティング</title>
+<style>
+  :root{
+    --bg:#101418; --panel:#171d23; --line:#2a333c;
+    --ink:#dce4ea; --muted:#8b98a5; --faint:#5c6a76; --space:#7f77dd;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:"Hiragino Sans","Noto Sans JP",-apple-system,sans-serif;
+    font-size:16.5px; line-height:2.0;
+    padding:72px 20px 96px;
+  }
+  .col{max-width:720px; margin:0 auto}
+  .series{font-size:13px; color:var(--faint); letter-spacing:.12em; margin-bottom:10px}
+  h1{font-size:30px; font-weight:600; line-height:1.5; margin-bottom:6px}
+  .entitle{font-size:14px; color:var(--muted); margin-bottom:40px}
+  .epigraph{
+    border-left:2px solid var(--line); padding:4px 0 4px 22px; margin:44px 0;
+    font-family:Georgia,"Times New Roman",serif; font-style:italic;
+    font-size:16px; line-height:1.8; color:var(--muted);
+  }
+  .epigraph .jp{display:block; margin-top:10px; font-style:normal;
+    font-family:"Hiragino Sans","Noto Sans JP",-apple-system,sans-serif;
+    font-size:13.5px; color:var(--faint)}
+  .epigraph .attr{display:block; margin-top:10px; font-size:13px; font-style:normal; color:var(--faint)}
+  .lede{color:var(--muted); margin:0 0 40px}
+  a.card, div.card{
+    display:block; background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:20px 24px; margin:0 0 14px; color:inherit; text-decoration:none;
+  }
+  a.card:hover{border-color:var(--space)}
+  div.card{opacity:.55}
+  .cardno{font-size:12px; color:var(--faint); letter-spacing:.14em}
+  .cardtitle{font-size:18px; font-weight:600; margin:2px 0 6px; line-height:1.6}
+  .card p{font-size:14px; color:var(--muted); line-height:1.9; margin:0 0 10px}
+  .tag{display:inline-block; font-size:11.5px; padding:2px 10px; border-radius:999px;
+    border:1px solid var(--line); color:var(--faint)}
+  a.card .tag{color:var(--space); border-color:var(--space)}
+  .demo{width:100%; border:1px solid var(--line); border-radius:12px; background:var(--panel)}
+  .demo1{height:960px}
+  @media(max-width:640px){ .demo1{height:1500px} }
+  .demonote{font-size:12.5px; color:var(--faint); margin:8px 0 40px; text-align:center}
+  .extra{font-size:13.5px; color:var(--faint); margin-top:28px}
+  .extra a{color:var(--muted)}
+  .extra a:hover{color:var(--ink)}
+  .footer{margin-top:72px; padding-top:24px; border-top:1px solid var(--line);
+    color:var(--faint); font-size:12.5px; text-align:center; letter-spacing:.08em}
+</style>
+</head>
+<body>
+
+<div class="col">
+  <div class="series">連載・全4部</div>
+  <h1>引き算のトラブルシューティング</h1>
+  <div class="entitle">Debugging by Elimination</div>
+
+  <div class="epigraph">
+    When you have eliminated the impossible, whatever remains, however improbable, must be the truth.
+    <span class="jp">ありえないものをすべて消去して、あとに残ったものが——どれほどありそうになくても——真実にちがいない。</span>
+    <span class="attr">— Sherlock Holmes, in Arthur Conan Doyle, <i>The Sign of the Four</i> (1890)</span>
+  </div>
+
+  <p class="lede">「センス」「経験」「地頭」という言葉で片付けられてきた障害調査の技能を、再現できる手続きとして組み立て直す連載。理屈は各部で——まずは、模型を動かしてみてほしい。</p>
+
+  <iframe class="demo demo1" src="narrowing-scenarios.html?embed=1&lang=ja&scn=0" title="絞り込みデモ(入門)"></iframe>
+  <div class="demonote">点は容疑者(原因の候補)。「次へ」で観測が進み、無実と分かった候補が消灯していく。この模型に名前を付けていくのが、第1部。</div>
+
+  <a class="card" href="part1.html">
+    <div class="cardno">第1部</div>
+    <div class="cardtitle">引き算のトラブルシューティング</div>
+    <p>消去の手続きの骨格を、ひとつの障害調査を模した動く模型とともに一周する。ゴールの決め方、候補の削り方、消してよい根拠、止めどき。</p>
+    <span class="tag">公開中(草稿プレビュー)</span>
+  </a>
+
+  <div class="card">
+    <div class="cardno">第2部</div>
+    <div class="cardtitle">デバッグには副作用がある</div>
+    <p>調査と対応が、動いている系そのものに与える影響を正面から扱う。連載の中で、既存の文献にいちばん書かれていない部分。</p>
+    <span class="tag">執筆中</span>
+  </div>
+
+  <div class="card">
+    <div class="cardno">第3部</div>
+    <div class="cardtitle">引き算が効かないとき</div>
+    <p>直しても戻ってくる問題(輪)と、犯人がひとりもいない問題(総和)。この手続きの限界と、その先の考え方。</p>
+    <span class="tag">執筆中</span>
+  </div>
+
+  <div class="card">
+    <div class="cardno">第4部</div>
+    <div class="cardtitle">対応表とチートシート</div>
+    <p>手続き・観測・判断の全体を、一枚に圧縮したリファレンス。</p>
+    <span class="tag">執筆中</span>
+  </div>
+
+  <p class="extra">デモをまとめて見る: <a href="narrowing-scenarios.html">絞り込みデモ(日英・全5シナリオ)</a></p>
+
+  <div class="footer">© 2026 Yusaku SAWAI</div>
+</div>
+
+</body>
+</html>
