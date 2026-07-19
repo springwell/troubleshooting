@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Debugging by Elimination — Part 1</title>
+<style>
+  :root{
+    --bg:#101418; --panel:#171d23; --line:#2a333c;
+    --ink:#dce4ea; --muted:#8b98a5; --faint:#5c6a76; --space:#7f77dd;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+    font-size:16.5px; line-height:1.85;
+    padding:56px 20px 96px;
+  }
+  .col{max-width:720px; margin:0 auto}
+  .wide{max-width:720px; margin:40px auto}
+  .series{font-size:13px; color:var(--faint); letter-spacing:.12em; margin-bottom:10px}
+  .series a{color:var(--muted); text-decoration:none}
+  .series a:hover{color:var(--ink)}
+  h1{font-size:30px; font-weight:600; line-height:1.4; margin-bottom:6px}
+  .entitle{font-size:14px; color:var(--muted); margin-bottom:40px}
+  .epigraph{
+    border-left:2px solid var(--line); padding:4px 0 4px 22px; margin:44px 0;
+    font-family:Georgia,"Times New Roman",serif; font-style:italic;
+    font-size:16px; line-height:1.8; color:var(--muted);
+  }
+  .epigraph .attr{display:block; margin-top:10px; font-size:13px; font-style:normal; color:var(--faint)}
+  h2{font-size:21px; font-weight:600; margin:64px 0 22px; line-height:1.5}
+  p{margin:0 0 24px}
+  strong{font-weight:600; color:#eef3f7}
+  .demo{width:100%; border:1px solid var(--line); border-radius:12px; background:var(--panel)}
+  .demo1{height:960px}
+  @media(max-width:640px){ .demo1{height:1500px} }
+  .demonote{font-size:12.5px; color:var(--faint); margin-top:8px; text-align:center}
+  .tobecontinued{margin-top:72px; padding-top:28px; border-top:1px solid var(--line);
+    color:var(--faint); font-size:14px}
+  html{scroll-behavior:smooth}
+  h2{scroll-margin-top:28px}
+  #progress{position:fixed; top:0; left:0; height:2px; width:0;
+    background:var(--space); z-index:10}
+  .toc{position:fixed; top:76px; left:22px; width:200px; display:none; z-index:5}
+  @media(min-width:1200px){ .toc{display:block} }
+  .toc a{display:block; color:var(--faint); text-decoration:none; font-size:12px;
+    line-height:1.55; padding:4px 12px; border-left:2px solid var(--line)}
+  .toc a.on{color:var(--ink); border-left-color:var(--space)}
+  .toc a:hover{color:var(--muted)}
+  .test{border:1px solid var(--line); border-left:2px solid var(--space); background:var(--panel);
+    border-radius:0 10px 10px 0; padding:12px 20px; margin:0 0 24px; font-size:15px; line-height:1.75}
+  .test .tlabel{display:block; font-size:11px; color:var(--faint); letter-spacing:.14em; margin-bottom:2px}
+  .footer{margin-top:72px; padding-top:24px; border-top:1px solid var(--line);
+    color:var(--faint); font-size:12.5px; text-align:center; letter-spacing:.08em}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+
+<div class="col">
+  <div class="series"><a href="./">Series</a> · Part 1 (draft preview) · <a href="part1.html">日本語版</a></div>
+  <h1>Debugging by Elimination</h1>
+  <div class="entitle">引き算のトラブルシューティング</div>
+
+  <div class="epigraph">
+    When you have eliminated the impossible, whatever remains, however improbable, must be the truth.
+    <span class="attr">— Sherlock Holmes, in Arthur Conan Doyle, <i>The Sign of the Four</i> (1890)</span>
+  </div>
+
+  <h2>0. Introduction — Replacing “Intuition” with a Model</h2>
+
+  <p>There are engineers who are good at incidents. They glance at a few logs, run a few commands, and say “it’s probably here.” They’re right. Everyone around them calls it experience, instinct, intuition. I called it that too, for a long time — and as I worked through incidents as an SRE on a distributed cloud, I could feel something like it growing in me.</p>
+
+  <p>This series is about that state of affairs. “Intuition,” “experience,” “natural talent” — these are not explanations of a skill; they are where explanation gives up. The person praised for them cannot reproduce them; the person teaching cannot hand them over. It is not that troubleshooting has no written procedures. But most are bullet lists that begin with “first, form a hypothesis” — and they never show how the whole activity fits together.</p>
+
+  <p>What this series does is build a model of the whole. It has three parts. A space of candidate causes — at first an uncountable fog, later a countable set of dots. Operations that carve that space down through observation. And a decision: when to stop carving and act. This series reassembles troubleshooting from these three parts — and shows it to you as a working model.</p>
+
+  <p>Let me state the claim precisely, up front. <strong>Troubleshooting can be turned into a procedure. But the procedure does not remove judgment — it marks the boundaries where judgment is required.</strong> What has kept changing through the decades is <em>what tends to break</em>, not <em>how to narrow things down</em> — and it is the carry-over part that can be captured as procedure. What the procedure guarantees is coverage (no candidate gets dropped) and safety (no irreversible step gets taken by accident) — not speed. Speed still lives in mastery. But by the end of this series, the content of that mastery should have shrunk to something much smaller and sharper: an eye for <em>what to check first</em>. And one more thing. This procedure does not require a hypothesis. You can start investigating on a day when no hypothesis will come — <strong>a hypothesis is a tool for speed, not an admission ticket</strong>. Chapter 5 returns to what that means.</p>
+
+  <p>One more thing to draw up front: the reach of the claim. Problems can be sorted by the shape that elimination converges to. A problem with a single cause converges to a point. A problem that occurs only when several conditions coincide — the kind that only breaks on a particular version with a particular setting — converges to a combination of conditions. A problem whose cause is not a point but a structure — a loop that makes itself worse — converges to a ring. And there are problems with no culprit at all: many small contributions piling up while the whole slowly gets heavier. The problem is the sum itself. This part’s procedure carries you all the way to the cause for the first two; rings and sums are taken up in Part 3. The only thing that converges nowhere is an event that in principle leaves no evidence — a cosmic-ray bit flip.</p>
+</div>
+
+<div class="wide">
+  <svg viewBox="0 0 720 252" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The four problem types: a point, an intersection of conditions, a ring, and a sum" style="display:block;width:100%;height:auto">
+    <defs>
+      <marker id="arw3" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" fill="var(--space)"/></marker>
+    </defs>
+    <circle cx="75" cy="58" r="3.5" fill="var(--line)"/><circle cx="75" cy="80" r="3.5" fill="var(--line)"/><circle cx="75" cy="102" r="3.5" fill="var(--line)"/><circle cx="97" cy="58" r="3.5" fill="var(--line)"/><circle cx="97" cy="102" r="3.5" fill="var(--line)"/><circle cx="119" cy="58" r="3.5" fill="var(--line)"/><circle cx="119" cy="80" r="3.5" fill="var(--line)"/><circle cx="119" cy="102" r="3.5" fill="var(--line)"/>
+    <circle cx="97" cy="80" r="5" fill="var(--space)"/>
+    <circle cx="259" cy="80" r="30" fill="none" stroke="var(--line)"/><circle cx="287" cy="80" r="30" fill="none" stroke="var(--line)"/><circle cx="273" cy="80" r="5" fill="var(--space)"/>
+    <circle cx="449.0" cy="52.0" r="3.5" fill="var(--line)"/><circle cx="475.6" cy="71.3" r="3.5" fill="var(--line)"/><circle cx="465.5" cy="102.7" r="3.5" fill="var(--line)"/><circle cx="432.5" cy="102.7" r="3.5" fill="var(--line)"/><circle cx="422.4" cy="71.3" r="3.5" fill="var(--line)"/>
+    <path d="M 449 42 A 38 38 0 1 1 440 43.1" fill="none" stroke="var(--space)" stroke-width="1.5" marker-end="url(#arw3)"/>
+    <circle cx="598" cy="62" r="3.5" fill="var(--space)" fill-opacity="0.33"/><circle cx="598" cy="80" r="3.5" fill="var(--space)" fill-opacity="0.33"/><circle cx="598" cy="98" r="3.5" fill="var(--space)" fill-opacity="0.33"/><circle cx="616" cy="62" r="3.5" fill="var(--space)" fill-opacity="0.33"/><circle cx="616" cy="80" r="3.5" fill="var(--space)" fill-opacity="0.33"/><circle cx="616" cy="98" r="3.5" fill="var(--space)" fill-opacity="0.33"/><circle cx="634" cy="62" r="3.5" fill="var(--space)" fill-opacity="0.33"/><circle cx="634" cy="80" r="3.5" fill="var(--space)" fill-opacity="0.33"/><circle cx="634" cy="98" r="3.5" fill="var(--space)" fill-opacity="0.33"/><circle cx="652" cy="62" r="3.5" fill="var(--space)" fill-opacity="0.33"/><circle cx="652" cy="80" r="3.5" fill="var(--space)" fill-opacity="0.33"/><circle cx="652" cy="98" r="3.5" fill="var(--space)" fill-opacity="0.33"/>
+    <text x="97" y="168" text-anchor="middle" font-size="14" font-weight="600" fill="var(--ink)">A point</text>
+    <text x="97" y="190" text-anchor="middle" font-size="11.5" fill="var(--muted)">one culprit</text>
+    <text x="273" y="168" text-anchor="middle" font-size="14" font-weight="600" fill="var(--ink)">An intersection</text>
+    <text x="273" y="190" text-anchor="middle" font-size="11.5" fill="var(--muted)">only together, it breaks</text>
+    <text x="449" y="168" text-anchor="middle" font-size="14" font-weight="600" fill="var(--ink)">A ring</text>
+    <text x="449" y="190" text-anchor="middle" font-size="11.5" fill="var(--muted)">fix it, and it returns</text>
+    <text x="625" y="168" text-anchor="middle" font-size="14" font-weight="600" fill="var(--ink)">A sum</text>
+    <text x="625" y="190" text-anchor="middle" font-size="11.5" fill="var(--muted)">no single culprit</text>
+    <line x1="30" y1="212" x2="340" y2="212" stroke="var(--line)"/>
+    <line x1="382" y1="212" x2="692" y2="212" stroke="var(--line)"/>
+    <text x="185" y="236" text-anchor="middle" font-size="11.5" fill="var(--faint)">this part’s procedure reaches these</text>
+    <text x="537" y="236" text-anchor="middle" font-size="11.5" fill="var(--faint)">taken up in Part 3</text>
+  </svg>
+  <div class="demonote">The four types, by the shape elimination converges to. Two further situations — a report that is itself wrong, and a system that keeps changing mid-investigation — also belong to Part 3.</div>
+</div>
+
+<div class="col">
+
+  <p>This series deliberately leaves out parallel investigation by teams (the domain of incident command) and the design of communication with customers and stakeholders. Both matter; the procedure inside one engineer’s head comes first. It also leaves out investigations where an adversary erases the evidence — the forensics of a security breach. The elimination here assumes observations are not being deliberately deceived; pursuing an opponent who deceives them is a discipline of its own.</p>
+
+  <p>And who this is written for: the engineer who has stood in front of an incident thinking “I don’t have the sense for this” — and the engineer who has caught themselves telling a junior, “honestly, it’s just intuition.” Both.</p>
+
+  <p>The whole activity fits on one map. First, a stage where you decide what would count as done. Then a stage you repeat: observe and eliminate candidates, judge whether you have narrowed enough, act, and check whether it worked.</p>
+</div>
+
+<div class="wide">
+  <svg viewBox="0 0 720 322" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The whole activity: a deciding stage (set the goal) and a repeating stage (observe, judge, act, re-observe), with two exits" style="display:block;width:100%;height:auto">
+    <defs>
+      <marker id="arw2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--muted)"/></marker>
+      <marker id="arw2-yes" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--space)"/></marker>
+      <marker id="arw2-no" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--faint)"/></marker>
+    </defs>
+    <text x="105" y="32" text-anchor="middle" font-size="12" fill="var(--faint)" letter-spacing="0.12em">DECIDE FIRST</text>
+    <text x="457" y="32" text-anchor="middle" font-size="12" fill="var(--faint)" letter-spacing="0.12em">THEN REPEAT</text>
+    <rect x="215" y="50" width="485" height="230" rx="14" fill="none" stroke="var(--line)" stroke-dasharray="4 6"/>
+    <rect x="30" y="70" width="150" height="70" rx="10" fill="var(--panel)" stroke="var(--line)"/>
+    <text x="105" y="98" text-anchor="middle" font-size="13.5" font-weight="600" fill="var(--ink)">Set the goal</text>
+    <text x="105" y="118" text-anchor="middle" font-size="11" fill="var(--faint)">ch. 2</text>
+    <rect x="245" y="75" width="180" height="56" rx="10" fill="var(--panel)" stroke="var(--line)"/>
+    <text x="335" y="98" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)">Observe &amp; eliminate</text>
+    <text x="335" y="118" text-anchor="middle" font-size="11" fill="var(--faint)">ch. 3–5</text>
+    <rect x="475" y="65" width="200" height="76" rx="10" fill="var(--panel)" stroke="var(--line)"/>
+    <text x="575" y="90" text-anchor="middle" font-size="12.5" font-weight="600" fill="var(--ink)">Narrowed enough?</text>
+    <text x="575" y="110" text-anchor="middle" font-size="12.5" font-weight="600" fill="var(--ink)">Side effects acceptable?</text>
+    <text x="575" y="130" text-anchor="middle" font-size="11" fill="var(--faint)">ch. 6</text>
+    <rect x="475" y="185" width="200" height="56" rx="10" fill="var(--panel)" stroke="var(--line)"/>
+    <text x="575" y="208" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)">Act</text>
+    <text x="575" y="228" text-anchor="middle" font-size="11" fill="var(--faint)">ch. 6</text>
+    <rect x="245" y="185" width="180" height="56" rx="10" fill="var(--panel)" stroke="var(--line)"/>
+    <text x="335" y="208" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)">Re-observe</text>
+    <text x="335" y="228" text-anchor="middle" font-size="11" fill="var(--faint)">ch. 6</text>
+    <line x1="180" y1="105" x2="239" y2="105" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#arw2)"/>
+    <line x1="425" y1="101" x2="469" y2="101" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#arw2)"/>
+    <line x1="575" y1="141" x2="575" y2="179" stroke="var(--space)" stroke-width="1.8" marker-end="url(#arw2-yes)"/>
+    <text x="587" y="164" font-size="11.5" fill="var(--space)">both yes</text>
+    <line x1="475" y1="213" x2="431" y2="213" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#arw2)"/>
+    <line x1="335" y1="185" x2="335" y2="137" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#arw2)"/>
+    <line x1="335" y1="241" x2="335" y2="296" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#arw2)"/>
+    <text x="335" y="314" text-anchor="middle" font-size="12" fill="var(--muted)">goal met — done</text>
+    <line x1="245" y1="213" x2="152" y2="213" stroke="var(--faint)" stroke-width="1.5" stroke-dasharray="5 5" marker-end="url(#arw2-no)"/>
+    <text x="137" y="238" text-anchor="middle" font-size="11.5" fill="var(--faint)">cut off at the line</text>
+    <text x="137" y="256" text-anchor="middle" font-size="11" fill="var(--faint)">drawn first (ch. 2, 7)</text>
+  </svg>
+  <div class="demonote">The whole of troubleshooting — a deciding stage, then a repeating stage. The inside of the decision is enlarged in chapter 6’s figure.</div>
+</div>
+
+<div class="col">
+
+  <p>The chapters trace this map. How to set the goal is chapter 2. How to eliminate — what counts as a suspect, the pincer, what justifies crossing a candidate off — is chapters 3 through 5. Judgment and action are chapter 6; what lies outside the loop — cutting off, and carrying lessons forward — is chapter 7.</p>
+
+  <p>The series has four parts, and this one walks the skeleton end to end. Part 2, “Debugging Has Side Effects Too,” faces the effect that investigation and response have on the very system that is running — the part of this material I believe is least written about elsewhere. Part 3, “When Elimination Fails,” covers problems that come back after you fix them, and the limits of this procedure. Part 4 compresses everything into a reference table and a cheat sheet. Parts 2 through 4 are in progress.</p>
+
+  <h2>1. A Model of Troubleshooting — From 120 to 1</h2>
+
+  <p>Explanations can wait — it’s quicker if you just run the model.</p>
+
+  <p>What you are about to see is a whole incident investigation, viewed from above, as a model. From the report — “only logins fail, sometimes” — to a single isolated cause, replayed in six frames.</p>
+
+  <p>The dots scattered on the screen are this incident’s suspects — candidate causes. A dot’s position is its identity: hosts run along one axis, and each host’s parts (the screen says “components”) stack along another. Twelve hosts × eight parts, plus 24 dots of infrastructure shared by all hosts: 120 in all. So each dot names one suspect — “this part, on this host.”</p>
+
+  <p>Each time an observation lands, the suspects proven innocent go dark. When you step frames, the viewpoint swings to a convenient angle on its own — only the viewpoint moves; the dots never rearrange. All you do is step through, and watch how they go out.</p>
+</div>
+
+<div class="wide">
+  <iframe class="demo demo1" src="narrowing-scenarios.html?embed=1&lang=en&scn=0" title="The narrowing demo (intro case)"></iframe>
+  <div class="demonote">Axes: hosts × components (the view rotates; the layout doesn’t). “Next” to advance (arrow keys work). Drag to rotate freely.</div>
+</div>
+
+<div class="col">
+  <p>The candidates fall from 120 to 8, to 4, to 1. It takes less than two minutes.</p>
+
+  <p>Remember what the screen did at the biggest drop: most of the space went dark at once, and a single column stayed lit. The moment we learned that every failure passed through one particular host, every other host’s parts were acquitted together — one observation extinguishes suspects not one by one, but in bundles. That feel is the elimination this series is named for.</p>
+
+  <p>Those two minutes were one full lap of the map in chapter 0. From here on, the text refers to the demo’s frame numbers and gives names to the things you just felt — that is how this series is built.</p>
+
+  <h2>2. Decide the Goal First — Purpose Shapes the Procedure</h2>
+
+  <p>Frame 2 of the demo contains one quietly important line. The moment we know the failures all pass through one host (Host 4), pulling Host 4 out of rotation stops them right now. <strong>The short-term goal is achievable immediately — and the cause is still unnamed.</strong></p>
+
+  <p>Troubleshooting actually has two kinds of goals. Sometimes identifying and fixing the cause is itself the goal (a single goal); in incident response, “stop the impact on the service” and “kill the root cause” exist separately (a compound goal). And, inconveniently, the two often demand different moves. Pulling Host 4 is the right move for the short-term goal and brings you not one step closer to the cause. Leaving Host 4 untouched so you can observe it is loyal to the investigation — and can be a betrayal of the short-term goal.</p>
+
+  <p>So the first thing to do is not investigation, and not log collection: <strong>decide the goal</strong>. What, this time, counts as done? Are the short-term and the long-term separate? If so, which comes first? This declaration becomes the evaluation function for every judgment that follows.</p>
+
+  <div class="test"><span class="tlabel">THE TEST</span>Is this move sound with respect to the goal? — “May I run this?” and “Should I chase this deeper?” both reduce to this one question.</div>
+
+  <p>Goal-setting includes settling, in advance, for the case where the cause is never reached. Not every incident resolves to a root cause. Some leave no evidence; some never reproduce; some cost more to investigate than they cost in damage. “If we can narrow it this far, and put prevention in place at this level, we end it without a single-point cause” — draw that line at the start, not in the heat, and cutting an investigation off becomes a decision instead of a defeat.</p>
+
+  <p>One rule of thumb to close with: problems that worsened fast tend to resolve fast, and long-standing problems tend to keep grinding slowly worse. The sharpness of the start roughly matches the sharpness of the end. Part 3 will betray this rule once — but as an initial sizing of the time budget, I still use it.</p>
+
+  <h2>3. The Space of Candidates — Until the Fog Becomes Dots</h2>
+
+  <p>Let me describe, exactly as it is, the inside of your head at the moment an investigation starts. The cause might be config. Might be code. Might be hardware. You don’t know which host, or which layer. You cannot even count the candidates — <strong>you don’t yet know what counts as one</strong>.</p>
+
+  <p>What exists at the start is not a list of suspects. It is a vague sense that “it’s somewhere in this range.” This is what chapter 0 called the fog — the haze drifting in frame 0 of the demo. We refuse to draw the uncountable as if it were countable; that is all the picture is. Investigation is the act of clearing this fog with observations, down to a countable set of dots.</p>
+
+  <p>To turn fog into dots, you decide exactly one thing: <strong>what counts as a single suspect</strong> — the noun that completes “the cause is one of the ______.” One of the hosts. One of the processes. One of the config entries. The moment the noun is fixed, a suspect list can be written, observations attach to individual suspects, and actions can land on individual suspects.</p>
+
+  <div class="test"><span class="tlabel">THE TEST</span>Can you write the suspect list? — If not, you are still in the fog.</div>
+
+  <p>How many suspects you get depends on how you count. In frame 1, the declaration was “one of the parts, on one of the hosts,” so the fog split into 120 dots. Declare “one of the hosts” instead, and the same fog splits into 13 (counting the shared infrastructure as one). And the choice of what to count will matter once more, more dramatically: in Part 2’s hard case, switching how you count turns five causes into one.</p>
+</div>
+
+<div class="wide">
+  <iframe class="demo demo1" src="narrowing-scenarios.html?embed=1&lang=en&scn=0" title="The narrowing demo (revisited)"></iframe>
+  <div class="demonote">The same demo as chapter 1, frames 0–1 — watch the fog become dots one more time.</div>
+</div>
+
+<div class="col">
+
+  <p>Here is the other claim that runs through this series: <strong>the procedure works without knowing the system’s internals.</strong> The operations that eliminate candidates — sorting, comparing, crossing off, balancing the books — depend only on externally visible quantities and the structure of the candidate set. Implementation knowledge is not required. Proprietary software you cannot open; customers who worry about what your investigation might do to their running system — under those conditions too, this procedure worked. If you can read the source, you will be faster. But even when you cannot read it, and cannot freely touch it, the narrowing runs on externally visible quantities alone. Some part of what has been called “intuition,” I now think, was never implementation knowledge — it was this: elimination, driven by observation alone.</p>
+
+  <p>There are limits, of course. Elimination proceeds only to the boundary of opacity — it can reach “this part is the cause,” but not what went wrong inside the part. Past that point, however, the problem stops being investigative and becomes a different kind of decision. What that means, along with causal chains, is Part 3’s business.</p>
+
+  <h2>4. The Pincer — Elimination from Both Sides</h2>
+
+  <p>There are two directions to eliminate from. From the abnormal side, tracing back toward the cause — everyone does this. And from the healthy side, proving innocence — this one is forgotten surprisingly often. Squeezing from both directions is the pincer, and its speed often hinges on the forgotten half. The pincer has an ancestor from more than half a century ago — the Kepner-Tregoe method, which had you write down, side by side, what is happening and what is not. This series rebuilds that idea in the vocabulary of candidate spaces and elimination.</p>
+
+  <p>Here is the second case. The stage is a cluster of twelve datastore nodes — reads can be served from replicas, but each write goes through the node that owns its key — and it opens with the report: “writes have started failing; reads are fine.”</p>
+</div>
+
+<div class="wide">
+  <iframe class="demo demo1" src="narrowing-scenarios.html?embed=1&lang=en&scn=1" title="Case: only writes fail"></iframe>
+  <div class="demonote">The second case (six frames). This chapter refers to both the intro and this case.</div>
+</div>
+
+<div class="col">
+
+  <p>Checking the healthy side means checking, one by one, the things that ought to just work — without assuming that they do. That is what frame 3 of the intro did: does name resolution answer (dig)? Are dependencies reachable (curl)? Disk and resource limits fine? Clocks in sync? And — have you read the error text literally, without interpreting it? It looks like drudgework. But in the intro, one item on that dull list picked up the stopped time-sync — the cause itself — before any hypothesis had formed. And in frame 1 of this case, the moment the shared infrastructure checks out healthy, 24 suspects go dark at once. A bundle of boring checks often cuts more than one flashy discovery.</p>
+
+  <p>One permanent entry belongs on that checklist: <strong>invisible ceilings</strong>. The number of files you can open (the file-descriptor limit), the connections you can track, the ports you can use, the inodes and disk you have left — these are perfectly symptom-free until you hit them, and the moment you do, they erupt as seemingly unrelated symptoms.</p>
+
+  <p>That is exactly this case’s cause. The moment the disk crossed its configured watermark, the datastore switched itself into rejecting writes, to protect the data. The symptom was not damage; it was an automatic brake before the tank overflowed — and the error log had said “read-only” from the very beginning. A line you cannot read without knowing the mechanism. The healthy-side check must always include the question: are we still clear of the ceilings?</p>
+
+  <p>From the abnormal side, read the symptom’s shape backwards. If only writes are refused while reads are fine, the cause lives past the fork between the read and write paths — somewhere only writes must tread. Frame 3 of the case extinguishes six shared layers in one stroke by exactly this back-calculation (the one thing only a write must touch was the node’s own disk). Symptoms say more about where the cause lives than you would think. Not only what is broken — <strong>what is not broken</strong> is elimination material.</p>
+
+  <p>Comparisons, used mid-pincer, run in two directions. Spatial — against the working system next door. Frame 2 of the intro (logins via other hosts succeed) and frame 2 of the case (writes to keys owned by other nodes succeed) are this; always having a neighbor to compare against is one of the few privileges of distributed systems. Temporal — against your own past. It worked yesterday; it has been off since last week’s deploy. One caveat: a “used to work” that is far away in time is weak evidence — that it worked two years ago says nothing about today, by exactly the amount of change piled up in between.</p>
+
+  <p>One final caution. How much a healthy-check eliminates depends on the sensitivity of the observation. A low-sensitivity “looks fine” clears almost no one.</p>
+
+  <p>Take ping. Ping passing barely testifies to a path’s innocence. What ping verifies is only this: “a tiny parcel, sent once every second or so, by a separate carrier called ICMP, arrives.” Your application’s traffic sends much bigger parcels, to one specific port, hundreds of times a second — a different parcel, a different carrier, a different rate. So on a path that only drops large packets, or where only your application’s port is blocked, or that fails once in a few hundred tries, ping keeps cheerfully answering “fine.”</p>
+
+  <div class="test"><span class="tlabel">THE TEST</span>Would this “healthy” reading catch the failure mode you actually suspect?</div>
+
+  <p>The flat line of an averaged graph hiding a minority of anomalies is the same trap — Part 2’s case steps on it squarely, so here it is only named. And there is a kind of clue that fits neither “healthy” nor “abnormal”: every individual value is normal, but the values have come uncoupled. If incoming volume is rising and processed volume is not, work is vanishing somewhere in between. <strong>Where the books don’t balance is your next cutting plane.</strong> That, too, stars in Part 3’s case.</p>
+
+  <h2>5. The Discipline of Elimination — Hypotheses Order the Search; They Don’t Prune It</h2>
+
+  <p>Notice how little the operations so far — healthy-side checks, back-calculation, two-way comparison — have needed hypotheses. That was deliberate. Hypotheses are not bad; they have a right use and a wrong one, and that distinction is the core of the discipline.</p>
+
+  <p>The rule first. <strong>Use hypotheses to decide what to check first. Never use them to cross candidates off.</strong> Checking the suspicious one first is right — that is the “eye for what to check first” from chapter 0. But a candidate you find <em>un</em>-suspicious may leave the list only when an observation clears it.</p>
+
+  <div class="test"><span class="tlabel">THE TEST</span>What crossed that suspect off — an observation, or your own conviction?</div>
+
+  <p>Once you hold a hypothesis, the next thing to design is not the observation that would confirm it, but <strong>the observation that could kill it</strong>. Not as a matter of honesty — as a matter of efficiency. Confirmation brightens one candidate; refutation extinguishes them in bundles.</p>
+
+  <p>Recall frame 3 of the case: the single fact “reads are fine” put six shared layers out at once. That move was powerful not because it made anything more likely, but because it killed most of the surviving candidates in one stroke. In this procedure, an observation’s value is measured not by what it brightens but by <strong>what it can extinguish</strong>.</p>
+
+  <p>I learned this discipline not from theory but from my own failure. One day, a memory leak began in an application. Investigating, I found that another application sharing the same library had begun leaking around the same time, in a similar place. And both had started at the same release.</p>
+
+  <p>The same time; two applications; similar places; one shared component. Every arrow seemed to point the same way — the shared library. If the release was simultaneous, the library version aboard must be too. I was all but certain, and spent half a day inside that library and nowhere else. The other candidates sat in a box labeled “no need to check.” I had not eliminated them with observations. I had stopped seeing them, on zero observations.</p>
+
+  <p>The turning point was a refutation. Rolling the applications back to the previous release — one of them, both of them — did not stop the leak. The library theory died on the spot. Looking at the space again, the two apps’ “similar places” were logic that referenced the same specific data. Externally visible quantities could reach no further (the opacity boundary from chapter 3), so we brought the developers in and walked the code. The cause was a data migration that had shipped inside the release: both applications leaked when they read the migrated data. It also explains why the rollback didn’t help — rolling back the code does not un-migrate the data.</p>
+
+  <p>In hindsight, the temporal coincidence was real. What was wrong was the reading. <strong>A release is not one cause; it is a bundle of changes</strong> — application code, library versions, configuration, and a data migration. “It started with the release” points at <em>some</em> member of the bundle, never at <em>which</em>. Starting from the library was legitimate <em>ordering</em>. The sin was converting the same coincidence into grounds for <em>elimination</em> — crossing off the bundle’s other members, the data, on zero observations.</p>
+
+  <p>This failure pattern has a name in medical diagnosis: <strong>anchoring</strong> — the first handhold drags the whole chain of reasoning after it, and every later fact seems to support the hypothesis. The exit is blocked by premature closure: the moment you feel “solved,” the search closes. The treacherous part is that anchoring is experienced as confidence. From inside, there is no sensation of being anchored; there is only the certainty that “it’s obviously the library.” So the countermeasure cannot live in willpower — it has to live in the procedure. The separation of ordering from elimination, and refutation first: the two things this chapter has already given you.</p>
+
+  <p>One more piece of standard equipment: <strong>the completeness check</strong> — does the current candidate explain <em>all</em> of the observed facts? Both demos end on it. Frame 4 of the case pins the immediate cause: Node 7 crossed the disk watermark. But that candidate does not explain why only Node 7 crossed first. Frame 5 chases that one question, and finds that Node 7 had been rebuilt in an old replacement with the wrong, smaller disk — and that the other eleven nodes were already at 80% of the waterline.</p>
+
+  <p>The intro has the same shape. “Time-sync was stopped” does not explain why only Host 4 — and that one question digs up the fact that the first node built with the new IaC tooling had never received the hand-applied sync config: a problem that will recur on the next node built. <strong>Where a symptom shows up is not the same as how far the problem reaches.</strong> While unexplained facts remain, the investigation is not closed. The completeness check verifies the culprit — and doubles as a detector for problems with more than one cause.</p>
+
+  <p>Finally, the handling of experience itself. Medicine has a saying: “when you hear hoofbeats, think horses, not zebras” — before suspecting the rare disease, consider the common one. The saying works because the frequency distribution of diseases exists, is stable, and keeps being measured. IT’s distribution of “common causes” is non-stationary, local, and short-lived.</p>
+
+  <p>Our footing swaps out several times in a single career, and the list of common causes rewrites itself each time (the appendix digs into why). So in this field the discipline must be stricter: <strong>priors — experience’s “it’s probably that” voice — reorder the search; they never delete from it.</strong> This does not discount experience. The opposite: with elimination pinned to observation, experience becomes an asset that is safe even when it is wrong — right, it makes you faster; wrong, and all you lose is the order you checked things in.</p>
+
+  <p>This chapter’s discipline, turned inside out, is a guarantee. Chapter 0 said this procedure does not require a hypothesis — here is what that means. In territory where you lack knowledge, hypotheses either do not come at all, or they come in the shape of “maybe a cosmic ray flipped a bit” — the event chapter 0 placed out of reach, now wearing a hypothesis’s face: impossible to fully deny, incapable of directing a single observation.</p>
+
+  <p>As chapter 0 noted, most textbooks open with “first, form a hypothesis” — and build no bridge to this state. This series’ answer is to reverse the order. <strong>Don’t start from a hypothesis. Start from elimination.</strong> Observation shrinks the space with no hypothesis at all.</p>
+
+  <p>And the shrunken remainder is itself a nursery for hypotheses — the faces of the surviving candidates pose well-formed questions (“why does <em>this one</em> remain?”), while the absurd hypotheses died before birth, for want of anywhere to stand. Go back to the epigraph. <em>Eliminate the impossible, and whatever remains</em> — the line is not a detective’s closing flourish. It is the opening procedure for the day when no hypothesis will come.</p>
+
+  <p>With that, the elimination toolkit is complete: hypotheses order, observations extinguish, refutation goes first, and the completeness check catches what you forgot to close. The remaining question is when to stop carving — you do not always need a single dot before you act. The next chapter is about where that decision lives.</p>
+
+  <h2>6. The Decision Gate — Don’t Narrow to a Point</h2>
+
+  <p>The tools that eliminate candidates are all on the table; what remains is the judgment that stops them. Each lap of the loop carries, besides “what do I observe next,” one more judgment — <strong>may I move to action now?</strong> It comes down to the same two questions every time.</p>
+
+  <div class="test"><span class="tlabel">THE TEST</span>Narrowed enough? Are the side effects of the action acceptable? — Both yes: act. Either no: keep investigating.</div>
+
+  <p>This two-question gate is the most concrete instance of what chapter 0 promised. The judgment never disappears — but what to ask, and when to ask it, the procedure decides for you.</p>
+</div>
+
+<div class="wide">
+  <svg viewBox="0 0 720 412" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The decision cycle: a vertical boundary separates investigation and response; only the gate and re-observation cross it" style="display:block;width:100%;height:auto">
+    <defs>
+      <marker id="arw" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--muted)"/></marker>
+      <marker id="arw-yes" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--space)"/></marker>
+      <marker id="arw-no" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--faint)"/></marker>
+    </defs>
+    <line x1="360" y1="8" x2="360" y2="396" stroke="var(--line)" stroke-width="1" stroke-dasharray="2 6"/>
+    <text x="185" y="26" text-anchor="middle" font-size="12" fill="var(--faint)" letter-spacing="0.14em">INVESTIGATION</text>
+    <text x="535" y="26" text-anchor="middle" font-size="12" fill="var(--faint)" letter-spacing="0.14em">RESPONSE</text>
+    <rect x="245" y="44" width="230" height="84" rx="10" fill="var(--panel)" stroke="var(--space)" stroke-opacity="0.55"/>
+    <text x="360" y="78" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)">Narrowed enough?</text>
+    <text x="360" y="104" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)">Side effects acceptable?</text>
+    <rect x="40" y="180" width="220" height="82" rx="10" fill="var(--panel)" stroke="var(--line)"/>
+    <text x="150" y="206" text-anchor="middle" font-size="13.5" font-weight="600" fill="var(--ink)">Observe &amp; eliminate</text>
+    <text x="150" y="228" text-anchor="middle" font-size="11.5" fill="var(--muted)">side-effect-free first</text>
+    <g>
+      <circle cx="84" cy="246" r="3" fill="var(--ink)"/><circle cx="96" cy="246" r="3" fill="var(--line)"/><circle cx="108" cy="246" r="3" fill="var(--line)"/><circle cx="120" cy="246" r="3" fill="var(--ink)"/><circle cx="132" cy="246" r="3" fill="var(--line)"/><circle cx="144" cy="246" r="3" fill="var(--ink)"/><circle cx="156" cy="246" r="3" fill="var(--line)"/><circle cx="168" cy="246" r="3" fill="var(--line)"/><circle cx="180" cy="246" r="3" fill="var(--line)"/><circle cx="192" cy="246" r="3" fill="var(--ink)"/><circle cx="204" cy="246" r="3" fill="var(--line)"/><circle cx="216" cy="246" r="3" fill="var(--line)"/>
+    </g>
+    <rect x="460" y="180" width="220" height="82" rx="10" fill="var(--panel)" stroke="var(--line)"/>
+    <text x="570" y="215" text-anchor="middle" font-size="13.5" font-weight="600" fill="var(--ink)">Act</text>
+    <text x="570" y="239" text-anchor="middle" font-size="11.5" fill="var(--muted)">reversible &amp; narrow first</text>
+    <rect x="250" y="300" width="220" height="64" rx="10" fill="var(--panel)" stroke="var(--line)"/>
+    <text x="360" y="326" text-anchor="middle" font-size="13.5" font-weight="600" fill="var(--ink)">Re-observe</text>
+    <text x="360" y="348" text-anchor="middle" font-size="11.5" fill="var(--muted)">did the move truly work?</text>
+    <line x1="150" y1="180" x2="243" y2="102" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#arw)"/>
+    <line x1="477" y1="102" x2="568" y2="176" stroke="var(--space)" stroke-width="1.8" marker-end="url(#arw-yes)"/>
+    <text x="548" y="128" font-size="12" fill="var(--space)">both yes</text>
+    <line x1="570" y1="262" x2="476" y2="320" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#arw)"/>
+    <line x1="248" y1="322" x2="156" y2="266" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#arw)"/>
+    <text x="120" y="290" text-anchor="middle" font-size="11.5" fill="var(--faint)">even a miss</text>
+    <text x="120" y="308" text-anchor="middle" font-size="11.5" fill="var(--faint)">is an observation</text>
+    <line x1="310" y1="128" x2="213" y2="177" stroke="var(--faint)" stroke-width="1.5" stroke-dasharray="5 5" marker-end="url(#arw-no)"/>
+    <text x="140" y="152" text-anchor="middle" font-size="11.5" fill="var(--faint)">either no — keep investigating</text>
+    <line x1="360" y1="364" x2="360" y2="384" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#arw)"/>
+    <text x="360" y="404" text-anchor="middle" font-size="12" fill="var(--muted)">symptom gone, goal met — done</text>
+  </svg>
+  <div class="demonote">The decision cycle — there are only two places where the boundary between investigation (left) and response (right) is crossed.</div>
+</div>
+
+<div class="col">
+
+  <p>“Enough” does not mean one point. <strong>You rarely need to narrow to a single dot. If one action covers every surviving candidate, you may act now.</strong></p>
+
+  <p>Recall frame 2 of the intro. Which part of Host 4 is broken — still unknown. But “pull Host 4 from rotation” acts on every candidate inside Host 4 at once. Four candidates left, all four under that one umbrella: for the short-term goal, the narrowing is already “enough.”</p>
+
+  <p>This way of stopping is called <strong>satisficing</strong> — stopping at the answer that satisfies the goal, rather than the optimal answer of a single named culprit. And how fine to narrow is decided not by investigative aesthetics but by the goal declared in chapter 2. Stopping the impact: coarse is fine. Going for the root: narrow further.</p>
+
+  <p>The second question is side effects. Every action touches the system, and the touches form a ladder — from look-only observation, through reversible intervention, to irreversible response. This series calls it <strong>the side-effect ladder</strong>, and here only introduces the name: what investigation and response do to the system is the entire subject of Part 2. What is needed now is one point — “acceptable” is also judged against the goal declaration. The same restart is a heavy, evidence-destroying move while the goal is identification, and a legitimate one when stopping the impact comes first. Both of the gate’s questions are rooted in chapter 2. And when the gate says no and you go back to dig, climb the same ladder from the bottom — while look-only observation still cuts, don’t reach for anything heavier.</p>
+
+  <p>Through the gate, choose the action by two criteria: <strong>reversibility and blast radius</strong>. For equal effect, prefer the move you can undo, and the move with narrow reach. Frame 4 of the intro is the demonstration: restart the stopped time-sync — reversible, contained to Host 4, and, if the hypothesis is right, the symptom should vanish. It vanished; the verification was the fix.</p>
+
+  <p><strong>A reversible action doubles as a refutation device.</strong> Chapter 5’s rollback was exactly that — a move made in order to fix became the observation that killed the hypothesis. Reversibility is not only a safety property. A move you can make, watch, and unmake is itself a first-class observation.</p>
+
+  <p>Acting does not close the loop. <strong>After the action comes re-observation.</strong> Is the symptom really gone? Did the move work? If it did not, that fact is itself one more observation, and eliminates further. And “seems to have worked” carries its own trap — an intermittent problem looks cured no matter what you do. That is a question of designing the observation window, and belongs to the next chapter — together with everything else that lives outside the lap: the decision to cut off, the writing-out of the search, and the learning that spans incidents.</p>
+
+  <h2>7. Outside the Loop — How to End, and What to Carry</h2>
+
+  <p>The lap closed in chapter 6: observation eliminates, the gate judges, the action lands, re-observation confirms. This chapter lays out, in order, what lives outside that lap. How to confirm “fixed.” How to keep records when it drags. How to decide when to quit. And what to carry to the next incident. None of these are operations inside the lap — but a lap without them just keeps turning, not knowing how to end.</p>
+
+  <p>First, the trap chapter 6 ended on. An intermittent problem looks cured no matter what you do. An event that fires a few times a day is quiet for hours all on its own — the silence right after your fix may be skill, or may be mere gap. So for intermittent problems, <strong>define “fixed” before you fix</strong>: a zero-recurrence observation window, back-calculated from the frequency — days for a daily event, weeks for a weekly one.</p>
+
+  <p>Not every problem answers immediately, the way the intro’s time-sync did. For stubborn problems, the observation window usually <em>is</em> the verification.</p>
+
+  <div class="test"><span class="tlabel">THE TEST</span>Can you say, before the fix goes in, what will count as “fixed”?</div>
+
+  <p>If the investigation looks like passing a few hours, write it out of your head. What you tried. What you crossed off, and on what grounds. What remains. The lead you are chasing, and what you meant to check next. And what you decided “fixed” will mean. <strong>Your self of a few hours from now is another person</strong> — the post-all-nighter you, the Monday-morning you, the colleague who takes over. Write the handoff for that person.</p>
+
+  <p>The write-up pays beyond record-keeping. The moment you try to write down “grounds for crossing off,” it becomes visible whether they were an observation or a mere conviction — chapter 5’s test, embedded in the act of writing.</p>
+
+  <div class="test"><span class="tlabel">THE TEST</span>If someone took over right now, could they continue from this record alone?</div>
+
+  <p>Then, the quitting point. Chapter 2 drew the line — at the start, outside the heat — for the case where the cause is never reached. When you hit it, execute. <strong>Cutting off is not defeat; it is the execution of a decision you designed in advance.</strong> Continuing carries an invisible price tag: the prevention you could have built, the monitoring you could have added, in those same hours.</p>
+
+  <p>Withdrawal, too, has forms. Set monitoring traps over the narrowed range and wait for the recurrence — this time, the evidence gets captured. Leave the cause unnamed and thicken the defenses where you narrowed to. Or hand it over — to a deeper veteran on your team, to the team that owns the system, to the vendor if it is proprietary. Handing what’s beyond you to the right recipient is itself achieving the goal — and you may hand over before the line, whenever handing over is faster. And escalation only works when the write-up exists — the only investigation you can hand over is one that has become a record.</p>
+
+  <p>When the incident ends, the outer loop has one last job. Treat the retrospective (the postmortem) not as a ritual of remorse but as <strong>a data point that updates next time’s checking order</strong>. This cause teaches which candidates to look at first when a similar symptom next appears — the intro’s final frame (“auth failures: check the clocks early”), the case’s (“write-only failures: suspect a system protecting itself”). It is what the demos do in their last frame, every time. The usage discipline is unchanged from chapter 5: lessons reorder; they never delete. And so one larger loop turns, spanning incidents — with each lap, your priors fit the field’s actual distribution a little better. Whatever remains of the thing called “intuition” — much of it, probably, lives here.</p>
+
+  <p>That completes the lap, and its outside. What remains is the closing — what this procedure promises, and what it discards. Time to count the model’s limits.</p>
+
+  <h2>8. Closing — The Limits of the Model</h2>
+
+  <p>Chapter 0 made three promises: coverage, safety, and no hypothesis required. The chapters since have delivered the contents — the space of candidates (ch. 3), the operations (ch. 4–5), the decision (ch. 6), the outside of the loop (ch. 7). The judgment never disappeared; but where judgment is required should now be visible. Only safety’s main body is not here yet — that is Part 2’s job, where side effects are faced head-on. To close, I want to count what this model discards. The surest way to earn trust in a model is to say first what it does not capture.</p>
+
+  <p>The largest limit first. <strong>Complete elimination presupposes complete enumeration.</strong> “Whatever remains is the truth” holds only if the culprit made it onto the suspect list. A suspect that chapter 3’s counting missed goes dark under no observation — it simply is not there.</p>
+
+  <p>Fortunately, there are signs: when candidate after candidate refuses to fit the observations; when unexplained facts refuse to run out — when the completeness check will not stop ringing. Then the thing to doubt is not the remaining candidates but <strong>the list itself</strong>. Go back to chapter 3’s declaration and count again. Chapter 0’s promise survives this — the coverage the procedure guarantees was always coverage <em>inside the declared counting</em>, and where to place that declaration was judgment’s work from the very start. This is the final instance of the thesis: the procedure marks the boundaries where judgment is required. Doubting the space itself — including reports that are simply wrong, and systems that keep changing mid-investigation — is Part 3’s technique.</p>
+
+  <p>Next, three things the modeling discards. The demo’s dots go dark all-or-nothing; real elimination is <strong>decay</strong> — many suspects fade only to “almost innocent” (how far they fade is chapter 4’s sensitivity). The demo’s frames advance in an instant; between real frames flows <strong>time</strong> — the labor of observation, the waiting, the human approvals. That waiting is most of the texture of practice, and leads straight into Part 2.</p>
+
+  <p>And the demo replays <strong>the correct route, drawn after the fact</strong> — a real search has dead ends, backtracking, several threads at once. If the demo felt too tidy, your feeling is correct: it is not a travel log; it is a map drawn after coming home. But what was tidied is the route, not the rules. On the winding real journey, every crossing-off ran on the same grounds as the demo’s — observation and verification, nothing else. What is omitted is the wasted steps — not an invitation back to intuition.</p>
+
+  <p>Last, the model’s bottom-most assumption. Every chapter so far assumed <strong>the cause holds still</strong>. What was crossed off stays crossed off; what was fixed stays fixed. The second half of chapter 0’s typology — rings and sums — breaks that assumption. You fix it, and it comes back. Extinguished suspects relight in bulk. The question “who did it” itself swings and misses. How the procedure changes there — how far elimination still reaches, and where different tools begin — is Part 3, “When Elimination Fails.”</p>
+
+  <p>To end, back to chapter 0’s question. “Intuition,” by now, has been carved into three. One part — elimination driven by observation alone — became a procedure. One part — the eye for what to check first — remains as the place where experience lives, now under the discipline that it reorders only. The rest has no name yet. Granted. But “not yet named” and “unnameable” are different things. Read this series itself as an elimination in progress — carving whatever can be named out of the fog called “intuition.” What remains is the subject of the parts to come.</p>
+
+  <div class="tobecontinued">(End of Part 1. Part 2, “Debugging Has Side Effects Too,” is in progress — <a href="./" style="color:var(--muted)">back to the series index</a>)</div>
+
+  <h2>Appendix — Why Did This Skill Stay “Intuition”?</h2>
+
+  <p>(Background material, split out of the main text. Stands on its own.)</p>
+
+  <p>There is a question this series began from. A physician’s diagnosis is not left to intuition: it has a form — the differential; there are lists of diseases one must not miss; even the conditions under which a test may be skipped are written down in numbers. Airline pilots and nuclear-plant operators put their abnormal-situation thinking into checklists and procedures. Their work resembles ours — anomalies in complex systems, handled under time pressure. Why did software incident response, alone, remain a personal art?</p>
+
+  <p>The answer, I think, is not a difference in ability but a difference in stakes. In medicine, aviation, and nuclear power, failure reaches human life, and neither experiment nor retry is permitted — so they were historically forced to convert tacit knowledge into procedure. In most of software, failure was recoverable: restart, and it healed; re-release, and it was done. The pressure that forces tacit knowledge into procedure simply never came from the environment. That premise is now dissolving. At the scale where one incident propagates to thousands of tenants — with payments, medicine, and transport running on top — failure can no longer be called recoverable. We, too, have stepped — one foot in — into the world where procedure is no longer optional.</p>
+
+  <p>One more circumstance. Turning tacit skill into procedure needs a stable subject, and our footing — from mainframes to cloud to containers to serverless — has re-formed several times within a single career. A written list of “common causes” goes obsolete with the next paradigm; so the knowledge took the only durable form available: personal adaptability — intuition. That what kept changing was the content, and not the form, is the observation this series’ wager stands on.</p>
+
+  <div class="footer">© 2026 Yusaku SAWAI</div>
+</div>
+
+<script>
+(function(){
+  var hs=[].slice.call(document.querySelectorAll('h2'));
+  var toc=document.createElement('nav'); toc.className='toc'; toc.setAttribute('aria-label','Table of contents');
+  var links=hs.map(function(h,i){
+    h.id='sec'+i;
+    var a=document.createElement('a');
+    a.href='#sec'+i;
+    a.textContent=h.textContent.split(' — ')[0];
+    toc.appendChild(a);
+    return a;
+  });
+  document.body.appendChild(toc);
+  var bar=document.getElementById('progress');
+  function upd(){
+    var d=document.documentElement;
+    var max=d.scrollHeight-window.innerHeight;
+    var sc=window.pageYOffset||d.scrollTop||0;
+    bar.style.width=(max>0?sc/max*100:0)+'%';
+    var cur=0;
+    hs.forEach(function(h,i){ if(h.getBoundingClientRect().top<=100) cur=i; });
+    links.forEach(function(a,i){ a.className=(i===cur)?'on':''; });
+  }
+  window.addEventListener('scroll',upd,{passive:true});
+  window.addEventListener('resize',upd);
+  upd();
+})();
+</script>
+</body>
+</html>
